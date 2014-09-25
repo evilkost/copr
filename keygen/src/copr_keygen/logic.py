@@ -47,11 +47,11 @@ def user_exists(app, mail):
         # TODO: validate that we really got exactly one line in stdout
         ensure_passphrase_exist(app, mail)
         return True
-    elif "error reading key" in stderr:
+    elif "error reading key" in stderr.decode():
         return False
     else:
-        raise GpgErrorException(msg="unhandled error", cmd=cmd, stdout=stdout,
-                                stderr=stderr)
+        raise GpgErrorException(msg="unhandled error", cmd=cmd,
+                                stdout=stdout.decode(), stderr=stderr.decode())
 
 
 template = """
@@ -115,4 +115,4 @@ def create_new_key(
                 msg="Key was created, but not found in keyring"
                     "this shouldn't be possible")
     else:
-        raise GpgErrorException(msg=stderr)
+        raise GpgErrorException(msg=stderr.decode())

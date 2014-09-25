@@ -92,7 +92,7 @@ class MockPopenHandle(object):
         self.stderr = stderr or "mock stderr"
 
     def communicate(self):
-        return self.stdout, self.stderr
+        return self.stdout.encode(), self.stderr.encode()
 
 
 @mock.patch("copr_keygen.logic.ensure_passphrase_exist")

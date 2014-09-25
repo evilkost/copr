@@ -7,8 +7,10 @@ import six
 
 if six.PY3:
     from unittest import mock
+    from unittest.mock import patch
 else:
     import mock
+    from mock import patch
 
 import pytest
 
@@ -119,10 +121,11 @@ class TestUserExists(TestCase):
             logic.user_exists(app, TEST_EMAIL)
 
 
+@mock.patch("tempfile.NamedTemporaryFile")
 @mock.patch("copr_keygen.logic.user_exists")
 @mock.patch("copr_keygen.logic.Popen")
 class TestGenKey(TestCase):
-    def test_simple_create(self, popen, user_exists):
+    def test_simple_create(self, popen, user_exists, tmpfile):
         """
         Check correct key generation.
         At first user not exist, but after popen call,
@@ -132,12 +135,19 @@ class TestGenKey(TestCase):
         user_exists_returns = [False, True]
         user_exists.side_effect = \
             lambda *args, **kwargs: user_exists_returns.pop(0)
-        popen.return_value = MockPopenHandle(0)
+        #popen.return_value = MockPopenHandle(0)
+
+        def check_gpg_genkey_file_exists(*args, **kwargs):
+            assert tmpfile.called
+
+            return MockPopenHandle(0)
+
+        popen.side_effect = check_gpg_genkey_file_exists
 
         res = logic.create_new_key(app, TEST_NAME, TEST_EMAIL, TEST_KEYLENGTH)
         assert res is None
 
-    def test_strange_situation_create(self, popen, user_exists):
+    def test_strange_situation_create(self, popen, user_exists, tmpfile):
         """
         After key generation `user_exists` invoked again, and if it doesn't
         see key it should raise an error
@@ -149,23 +159,26 @@ class TestGenKey(TestCase):
         with pytest.raises(GpgErrorException):
             logic.create_new_key(app, TEST_NAME, TEST_EMAIL, TEST_KEYLENGTH)
 
-    def test_skip_creation_for_existing_user(self, popen, user_exists):
+    def test_skip_creation_for_existing_user(self, popen, user_exists, tmpfile):
         user_exists.return_value = True
         logic.create_new_key(app, TEST_NAME, TEST_EMAIL, TEST_KEYLENGTH)
 
         user_exists.assert_called_once()
         assert not popen.called
 
-    def test_error_popen(self, popen, user_exists):
+    def test_error_popen(self, popen, user_exists, tmpfile):
         user_exists.return_value = False
         popen.side_effect = OSError()
         with pytest.raises(GpgErrorException):
             logic.create_new_key(app, TEST_NAME, TEST_EMAIL, TEST_KEYLENGTH)
 
-    def test_error_gpg(self, popen, user_exists):
+    def test_error_gpg(self, popen, user_exists, tmpfile):
         user_exists.return_value = False
         err_msg = "Error message 123"
         popen.return_value = MockPopenHandle(1, stderr=err_msg)
+        def fix_name():
+            tmpfile.name = str(tmpfile.name)
+        tmpfile.side_effect = fix_name
         with pytest.raises(GpgErrorException) as e:
             logic.create_new_key(app, TEST_NAME, TEST_EMAIL, TEST_KEYLENGTH)
-            assert e.msg == err_msg
+            #assert e.message == err_msg

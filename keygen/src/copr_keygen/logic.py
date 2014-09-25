@@ -1,7 +1,9 @@
+import traceback
 import os
 
 from subprocess import PIPE, Popen
 import tempfile
+import sys
 
 from .exceptions import GpgErrorException
 
@@ -40,7 +42,7 @@ def user_exists(app, mail):
         handle = Popen(cmd, stdout=PIPE, stderr=PIPE)
         stdout, stderr = handle.communicate()
     except Exception as e:
-        raise GpgErrorException(msg="unhandled exception during gpg call",
+        raise GpgErrorException(msg="unha   ndled exception during gpg call",
                                 cmd=" ".join(cmd), err=e)
 
     if handle.returncode == 0:
@@ -95,24 +97,25 @@ def create_new_key(
             name_email=name_email,
             expire=expire or 0).encode('utf-8'))
 
-    cmd = [
-        app.config["GPG_BINARY"], "-v", "--batch",
-        "--homedir", app.config["GNUPG_HOMEDIR"],
-        "--gen-key", out.name
-    ]
+        cmd = [
+            app.config["GPG_BINARY"], "-v", "--batch",
+            "--homedir", app.config["GNUPG_HOMEDIR"],
+            "--gen-key", out.name
+        ]
 
-    try:
-        handle = Popen(cmd, stdout=PIPE, stderr=PIPE)
-        stdout, stderr = handle.communicate()
-    except Exception as e:
-        raise GpgErrorException(msg="unhandled exception during gpg call",
-                                cmd=" ".join(cmd), err=e)
+        try:
+            handle = Popen(cmd, stdout=PIPE, stderr=PIPE)
+            stdout, stderr = handle.communicate()
+        except Exception as e:
+            traceback.print_exc(file=sys.stdout)
+            raise GpgErrorException(msg="unhandled exception during gpg call",
+                                    cmd=" ".join(   cmd)) #, err=e)
 
-    if handle.returncode == 0:
-        # TODO: validate that we really got armored gpg key
-        if not user_exists(app, name_email):
-            raise GpgErrorException(
-                msg="Key was created, but not found in keyring"
-                    "this shouldn't be possible")
-    else:
-        raise GpgErrorException(msg=stderr.decode())
+        if handle.returncode == 0:
+            # TODO: validate that we really got armored gpg key
+            if not user_exists(app, name_email):
+                raise GpgErrorException(
+                    msg="Key was created, but not found in keyring"
+                        "this shouldn't be possible")
+        else:
+            raise GpgErrorException(msg=stderr.decode())

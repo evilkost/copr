@@ -2,8 +2,8 @@ from __future__ import print_function
 
 import sys
 
-from backend.createrepo import createrepo
-from backend.helpers import SortedOptParser
+from copr_backend.createrepo import createrepo
+from copr_backend.helpers import SortedOptParser
 
 
 def main(args):

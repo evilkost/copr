@@ -1,7 +1,6 @@
 #!/usr/bin/python -ttu
 
 
-
 from bunch import Bunch
 from retask.task import Task
 from retask.queue import Queue
@@ -21,10 +20,10 @@ import signal
 import sys
 import time
 
-from backend.exceptions import CoprBackendError
-from backend.dispatcher import Worker
-from backend.actions import Action
-from backend.callback import FrontendCallback
+from copr_backend.exceptions import CoprBackendError
+from copr_backend.dispatcher import Worker
+from copr_backend.actions import Action
+from copr_backend.callback import FrontendCallback
 
 
 def _get_conf(cp, section, option, default, mode=None):

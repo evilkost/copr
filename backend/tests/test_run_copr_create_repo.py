@@ -18,7 +18,6 @@ else:
     from mock import MagicMock
 
 
-sys.path.insert(0, "../run")
 
 from copr_create_repo import main as createrepo_main
 

@@ -221,8 +221,8 @@ class CoprClient(object):
 
                 - **handle:** :py:class:`~.responses.BuildHandle`
                 - text fields: "project", "owner", "status", "results",
-                "submitted_on", "started_on", "ended_on",
-                "built_pkgs", "src_pkg", "src_version"
+                  "submitted_on", "started_on", "ended_on",
+                  "built_pkgs", "src_pkg", "src_version"
 
 
         """
@@ -348,7 +348,7 @@ class CoprClient(object):
                 with additional fields:
 
                 - text fields: "description", "instructions", "last_modified",
-                "name"
+                  "name"
 
                 - **chroots**: list of
                   :py:class:`~.responses.ProjectChrootWrapper`

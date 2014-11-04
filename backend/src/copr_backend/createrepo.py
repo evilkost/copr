@@ -6,7 +6,7 @@ from subprocess import Popen
 
 from copr.client import CoprClient
 
-from backend.helpers import SortedOptParser
+from .helpers import SortedOptParser
 
 
 def createrepo_unsafe(path, lock=None, dest_dir=None, base_url=None):
@@ -55,7 +55,7 @@ def createrepo_unsafe(path, lock=None, dest_dir=None, base_url=None):
 
 
 def get_auto_createrepo_status(front_url, username, projectname):
-    client = CoprClient({"copr_url": front_url})
+    client = CoprClient(copr_url=front_url)
     result = client.get_project_details(projectname, username)
 
     if "auto_createrepo" in result.data["detail"]:

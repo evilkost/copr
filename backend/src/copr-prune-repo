@@ -2,6 +2,9 @@
 
 DAYS=14
 RESULTDIR=$(awk -F "=" '/^destdir/ {print $2}' /etc/copr/copr-be.conf)
+FRONTEND_BASE_URL=$(awk -F "=" '/^frontend_base_url/ {print $2}' /etc/copr/copr-be.conf)
+
+alias rm="echo rm"
 
 if [ ! -d $RESULTDIR ]; then
    echo "ERROR: destdir ($RESULTDIR) in /etc/copr/copr-be.conf does not exist."
@@ -11,7 +14,12 @@ fi
 pushd $RESULTDIR >/dev/null || { echo "Could not change to $RESULTDIR"; exit 1; }
 
 for REPO in $( ls -d */*/* | grep -v '/repodata$' ); do
+    echo "Processing path: " $REPO
     pushd $REPO >/dev/null || continue
+    username=`echo $REPO | cut -d"/" -f1`
+    projectname=`echo $REPO | cut -d"/" -f2`
+
+    echo "Username: " $username "Project: " $projectname
 
     # Removing failed builds
     for FAILED in $(find -name 'fail' -mtime +$DAYS); do
@@ -45,7 +53,7 @@ for REPO in $( ls -d */*/* | grep -v '/repodata$' ); do
     rm -f $LATEST_PKGS $ERR_LOG
     # unless we previosly deleted the repo, regen metadata
     if [ -d $(pwd) ]; then
-        runuser -c "createrepo_c --update -q --ignore-lock $(pwd)" - copr &>/dev/null || runuser -c "createrepo_c --update -q --ignore-lock $(pwd)" - copr
+        echo runuser -c "createrepo_c --update -q --ignore-lock $(pwd)" - copr &>/dev/null || runuser -c "createrepo_c --update -q --ignore-lock $(pwd)" - copr
     fi
     popd >/dev/null
 done

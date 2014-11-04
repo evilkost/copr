@@ -29,7 +29,7 @@ import logging
 # log = logging.getLogger()
 # log.info("Logger initiated")
 
-from backend.actions import Action, ActionType, ActionResult
+from copr_backend.actions import Action, ActionType, ActionResult
 
 import multiprocessing
 if six.PY3:
@@ -43,7 +43,7 @@ else:
 RESULTS_ROOT_URL = "http://example.com/results"
 
 
-@mock.patch("backend.actions.time")
+@mock.patch("copr_backend.actions.time")
 class TestAction(object):
 
     def setup_method(self, method):
@@ -323,7 +323,7 @@ class TestAction(object):
                 front_url=None,
                 results_root_url=RESULTS_ROOT_URL
             )
-            with mock.patch("backend.actions.shutil") as mc_shutil:
+            with mock.patch("copr_backend.actions.shutil") as mc_shutil:
                 test_action.run()
                 assert not mc_shutil.rmtree.called
 
@@ -343,7 +343,7 @@ class TestAction(object):
             with pytest.raises(EmptyQueue):
                self.test_q.get_nowait()
 
-    @mock.patch("backend.actions.createrepo")
+    @mock.patch("copr_backend.actions.createrepo")
     def test_delete_build_succeeded(self, mc_createrepo, mc_time):
         mc_time.time.return_value = self.test_time
         mc_front_cb = MagicMock()
@@ -436,7 +436,7 @@ class TestAction(object):
         )
         assert mc_createrepo.call_args == create_repo_expected_call
 
-    @mock.patch("backend.actions.createrepo")
+    @mock.patch("copr_backend.actions.createrepo")
     def test_delete_build_succeeded_createrepo_error(self, mc_createrepo, mc_time):
         mc_time.time.return_value = self.test_time
         mc_front_cb = MagicMock()

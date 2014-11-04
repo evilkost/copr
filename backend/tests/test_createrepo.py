@@ -22,10 +22,10 @@ else:
     from mock import MagicMock
 
 
-from backend.createrepo import createrepo, createrepo_unsafe
+from copr_backend.createrepo import createrepo, createrepo_unsafe
 
-@mock.patch('backend.createrepo.createrepo_unsafe')
-@mock.patch('backend.createrepo.CoprClient')
+@mock.patch('copr_backend.createrepo.createrepo_unsafe')
+@mock.patch('copr_backend.createrepo.CoprClient')
 def test_createrepo_conditional_true(mc_client, mc_create_unsafe):
     mc_client.return_value.get_project_details.return_value = MagicMock(data={"detail": {}})
 
@@ -41,8 +41,8 @@ def test_createrepo_conditional_true(mc_client, mc_create_unsafe):
 
     mc_create_unsafe.reset_mock()
 
-@mock.patch('backend.createrepo.createrepo_unsafe')
-@mock.patch('backend.createrepo.CoprClient')
+@mock.patch('copr_backend.createrepo.createrepo_unsafe')
+@mock.patch('copr_backend.createrepo.CoprClient')
 def test_createrepo_conditional_false(mc_client, mc_create_unsafe):
     mc_client.return_value.get_project_details.return_value = MagicMock(data={"detail": {"auto_createrepo": False}})
 
@@ -53,7 +53,7 @@ def test_createrepo_conditional_false(mc_client, mc_create_unsafe):
     assert mc_create_unsafe.call_args == mock.call('/tmp/', None, dest_dir='devel', base_url=base_url)
 
 
-@mock.patch('backend.createrepo.Popen')
+@mock.patch('copr_backend.createrepo.Popen')
 class TestCreaterepoUnsafe(object):
     def setup_method(self, method):
         self.tmp_dir_name = self.make_temp_dir()

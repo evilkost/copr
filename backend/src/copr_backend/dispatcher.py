@@ -15,11 +15,12 @@ from ansible import callbacks
 from setproctitle import setproctitle
 from IPy import IP
 from retask.queue import Queue
+from copr_mockremote import CliLogCallBack
 
 from .exceptions import MockRemoteError, CoprWorkerError
 from .job import BuildJob
 
-from .mockremote import MockRemote, CliLogCallBack
+from .mockremote import MockRemote
 from .callback import FrontendCallback
 
 ansible_playbook = "ansible-playbook"

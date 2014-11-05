@@ -9,7 +9,6 @@ is used to allow packagers to create third party repositories.
 
 This part is a backend."""
 
-from copr.client import __description__, __version__
 
 requires = [
     'PyYAML',
@@ -17,21 +16,21 @@ requires = [
     'setproctitle',
     'redis',
     'retask',
-    'python-aemon',
+    'python-daemon',
     'bunch',
-    'python-copr'
+    #'copr'
 ]
 
 
-__version__ = __version__
-__description__ = __description__
+__version__ = 1.46
+__description__ = "Backend part of the Copr build system"
 __author__ = "Copr team"
 __author_email__ = "copr-devel@lists.fedorahosted.org"
 __url__ = "http://fedorahosted.org/copr/"
 
 
 setup(
-    name='copr',
+    name='copr_backend',
     version=__version__,
     description=__description__,
     long_description=long_description,
@@ -48,7 +47,13 @@ setup(
     ],
     install_requires=requires,
     package_dir={'': 'src'},
-    packages=['copr', 'copr.backend'],
+    packages=['copr_backend'],
+    py_modules=['copr_create_repo', 'copr_mockremote'],
+    entry_points={
+        'console_scripts': [
+            'copr_mockremote = copr_mockremote:main',
+        ]
+    },
     include_package_data=True,
     zip_safe=False,
 )

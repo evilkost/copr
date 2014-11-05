@@ -1,5 +1,6 @@
 %if 0%{?rhel} < 7 && 0%{?rhel} > 0
 %global _pkgdocdir %{_docdir}/%{name}-%{version}
+%global __python2 %{__python}
 %endif
 
 Name:       copr-backend
@@ -79,6 +80,9 @@ only.
 
 
 %build
+
+CFLAGS="%{optflags}" %{__python3} setup.py build
+
 # build documentation
 pushd documentation
 make %{?_smp_mflags} python
@@ -103,8 +107,11 @@ install -d %{buildroot}/%{_sbindir}
 install -d %{buildroot}%{_sysconfdir}/cron.daily
 install -d %{buildroot}%{_sysconfdir}/sudoers.d
 
-cp -a backend/* %{buildroot}%{_datadir}/copr/backend
-cp -a copr-be.py %{buildroot}%{_datadir}/copr/
+%{__python2} setup.py install --skip-build --root %{buildroot}
+find %{buildroot}%{python3_sitelib} -name '*.exe' | xargs rm -f
+
+#cp -a backend/* %{buildroot}%{_datadir}/copr/backend
+cp -a src/copr-be.py %{buildroot}%{_datadir}/copr/
 cp -a copr-be.conf.example %{buildroot}%{_sysconfdir}/copr/copr-be.conf
 install -p -m 755 copr-prune-repo %{buildroot}%{_sbindir}/copr-prune-repo
 install -p -m 755 crontab/copr-backend %{buildroot}%{_sysconfdir}/cron.daily/copr-backend

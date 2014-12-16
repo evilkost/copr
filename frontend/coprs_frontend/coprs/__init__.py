@@ -60,3 +60,7 @@ app.register_blueprint(status_ns.status_ns)
 app.register_blueprint(recent_ns.recent_ns)
 
 app.add_url_rule("/", "coprs_ns.coprs_show", coprs_general.coprs_show)
+
+from rest_api import register_api
+
+register_api(app, db)

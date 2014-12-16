@@ -1,3 +1,4 @@
+import copy
 import datetime
 
 from sqlalchemy.ext.associationproxy import association_proxy
@@ -230,6 +231,12 @@ class Copr(db.Model, helpers.Serializer):
             if self.buildroot_pkgs(chroot):
                 modified_chroots.append(chroot)
         return modified_chroots
+
+    def to_dict(self, private=False):
+        result = {}
+        for key in ["id", "name"]:
+            result[key] = str(copy.copy(getattr(self, key)))
+        return result
 
 
 class CoprPermission(db.Model, helpers.Serializer):

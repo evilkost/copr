@@ -218,6 +218,7 @@ def api_login_required(f):
     return decorated_function
 
 
+
 def login_required(role=helpers.RoleEnum("user")):
     def view_wrapper(f):
         @functools.wraps(f)

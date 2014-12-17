@@ -17,6 +17,8 @@ from coprs import forms
 from coprs import helpers
 from coprs import models
 
+from coprs.logic.complex_logic import ComplexLogic
+
 from coprs.views.misc import login_required, page_not_found
 
 from coprs.views.coprs_ns import coprs_ns
@@ -430,13 +432,8 @@ def copr_delete(username, coprname):
     copr = coprs_logic.CoprsLogic.get(flask.g.user, username, coprname).first()
 
     if form.validate_on_submit() and copr:
-        builds_query = builds_logic.BuildsLogic.get_multiple(
-            flask.g.user, copr=copr)
-
         try:
-            for build in builds_query:
-                builds_logic.BuildsLogic.delete_build(flask.g.user, build)
-            coprs_logic.CoprsLogic.delete(flask.g.user, copr)
+            ComplexLogic.delete_copr(copr)
         except (exceptions.ActionInProgressException,
                 exceptions.InsufficientRightsException) as e:
 

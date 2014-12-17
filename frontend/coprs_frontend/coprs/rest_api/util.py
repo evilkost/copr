@@ -19,9 +19,10 @@ def json_loads_safe(raw, data_on_error=None):
         raise MalformedRequest(data_on_error or
                                "Failed to deserialize json string")
 
+
 def mm_deserialize(schema, obj_dict):
     result = schema.load(obj_dict)
     if result.errors:
-        raise MalformedRequest(data = result.errors)
+        raise MalformedRequest(data=result.errors)
     # import ipdb; ipdb.set_trace()
     return result

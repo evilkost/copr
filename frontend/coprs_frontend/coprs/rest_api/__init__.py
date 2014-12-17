@@ -51,11 +51,14 @@ def register_api(app, db):
     api.add_resource(ChrootListR, "/chroots")
     api.add_resource(ChrootR, "/chroots/<name>")
 
+    # TODO: try: https://github.com/sloria/flask-marshmallow
+
     @app.errorhandler(ApiError)
     def handle_api_error(error):
         response = Response(
             response="{}\n".format(error.data),
             status=error.code,
-            mimetype="text/plain"
+            mimetype="text/plain",
+            headers=error.headers,
         )
         return response

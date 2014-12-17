@@ -11,6 +11,7 @@ from coprs import forms
 from coprs import helpers
 from coprs.helpers import fix_protocol_for_backend
 from coprs.logic.api_logic import MonitorWrapper
+from coprs.logic.complex_logic import ComplexLogic
 
 from coprs.views.misc import login_required, api_login_required
 
@@ -139,11 +140,8 @@ def api_copr_delete(username, coprname):
     httpcode = 200
 
     if form.validate_on_submit() and copr:
-        builds_query = builds_logic.BuildsLogic.get_multiple(flask.g.user, copr=copr)
         try:
-            for build in builds_query:
-                builds_logic.BuildsLogic.delete_build(flask.g.user, build)
-            coprs_logic.CoprsLogic.delete(flask.g.user, copr)
+            ComplexLogic.delete_copr(copr)
         except (exceptions.ActionInProgressException,
                 exceptions.InsufficientRightsException) as err:
             output = {"output": "notok", "error": err}

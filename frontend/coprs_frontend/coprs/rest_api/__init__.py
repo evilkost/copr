@@ -4,6 +4,7 @@ from flask import Response, url_for
 from flask_restful import Resource, Api
 
 from coprs.rest_api.exceptions import ApiError
+from coprs.rest_api.resources.build import BuildListR, BuildR
 from coprs.rest_api.resources.chroot import ChrootListR, ChrootR
 from coprs.rest_api.resources.copr import CoprListR, CoprR
 
@@ -18,6 +19,7 @@ class RootR(Resource):
                 "self": url_for(RootR.endpoint),
                 "coprs": url_for(CoprListR.endpoint),
                 "chroots": url_for(ChrootListR.endpoint),
+                "builds": url_for(BuildListR.endpoint),
             }
         }
 
@@ -46,10 +48,13 @@ def register_api(app, db):
 
     api.add_resource(RootR, "/")
     api.add_resource(CoprListR, "/coprs")
-    api.add_resource(CoprR, "/coprs/<owner_name>/<project_name>")
+    api.add_resource(CoprR, "/coprs/<owner>/<project>")
 
     api.add_resource(ChrootListR, "/chroots")
     api.add_resource(ChrootR, "/chroots/<name>")
+
+    api.add_resource(BuildListR, "/builds")
+    api.add_resource(BuildR, "/builds/<int:build_id>")
 
     # TODO: try: https://github.com/sloria/flask-marshmallow
 

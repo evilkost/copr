@@ -75,19 +75,35 @@ class BuildsLogic(object):
 
         query = models.Build.query.order_by(models.Build.id.desc())
 
+        # import  ipdb; ipdb.set_trace()
+
+
         # if we get copr, query by its id
         if copr:
             query = query.filter(models.Build.copr == copr)
-        elif username and coprname:
-            query = (query.join(models.Build.copr)
-                     .options(db.contains_eager(models.Build.copr))
-                     .join(models.Copr.owner)
-                     .filter(models.Copr.name == coprname)
-                     .filter(models.User.username == username)
-                     .order_by(models.Build.submitted_on.desc()))
+        # TODO: unittest it
+        # elif username and coprname:
+        #     query = (query.join(models.Build.copr)
+        #              .options(db.contains_eager(models.Build.copr))
+        #              .join(models.Copr.owner)
+        #              .filter(models.Copr.name == coprname)
+        #              .filter(models.User.username == username)
+        #              .order_by(models.Build.submitted_on.desc()))
         else:
-            raise exceptions.ArgumentMissingException(
-                "Must pass either copr or both coprname and username")
+            if username:
+                query = (query
+                         .join(models.Build.copr)
+                         .options(db.contains_eager(models.Build.copr))
+                         .order_by(models.Build.submitted_on.desc())
+                         .join(models.Copr.owner)
+                         .filter(models.User.username == username))
+
+            if coprname:
+                query = query.filter(models.Copr.name == coprname)
+
+        # else:
+        #     raise exceptions.ArgumentMissingException(
+        #         "Must pass either copr or both coprname and username")
 
         return query
 

@@ -407,6 +407,15 @@ class Build(db.Model, helpers.Serializer):
         else:
             return src_rpm_name
 
+    def to_dict(self, options=None):
+        result = super(Build, self).to_dict(options)
+        result["src_pkg"] = result["pkgs"]
+        del result["pkgs"]
+        del result["copr_id"]
+
+        result["state"] = self.state
+        return result
+
 
 class MockChroot(db.Model, helpers.Serializer):
 

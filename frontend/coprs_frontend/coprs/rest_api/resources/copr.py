@@ -16,6 +16,7 @@ from coprs.logic.users_logic import UsersLogic
 from coprs.logic.coprs_logic import CoprsLogic
 
 from coprs.exceptions import ActionInProgressException, InsufficientRightsException
+from .build import BuildListR
 
 from ..exceptions import ObjectAlreadyExists, AuthFailed
 from ..util import get_one_safe, json_loads_safe, mm_deserialize
@@ -111,15 +112,16 @@ class CoprListR(Resource):
         parser.add_argument('owner', dest='username', type=str)
         parser.add_argument('limit', type=int)
         parser.add_argument('offset', type=int)
-        parser.add_argument('id', dest='ids', default=[], type=int, action='append')
         req_args = parser.parse_args()
 
         kwargs = {}
-        for key in ["username", "ids"]:
+        for key in ["username"]:
             if req_args[key]:
                 kwargs[key] = req_args[key]
 
         if "username" in kwargs:
+
+            kwargs["username"] = req_args["username"]
             kwargs["user_relation"] = "owned"
 
         query = CoprsLogic.get_multiple(
@@ -148,8 +150,8 @@ class CoprListR(Resource):
                 {
                     "copr": copr.to_dict(),
                     "link": url_for(CoprR.endpoint,
-                                    owner_name=copr.owner.name,
-                                    project_name=copr.name),
+                                    owner=copr.owner.name,
+                                    project=copr.name),
                 }
                 for copr in coprs_list
             ]
@@ -159,9 +161,9 @@ class CoprListR(Resource):
 class CoprR(Resource):
 
     @rest_api_auth_required
-    def delete(self, owner_name, project_name):
-        copr = get_one_safe(CoprsLogic.get(flask.g.user, owner_name, project_name),
-                            "Copr {}/{} not found".format(owner_name, project_name))
+    def delete(self, owner, project):
+        copr = get_one_safe(CoprsLogic.get(flask.g.user, owner, project),
+                            "Copr {}/{} not found".format(owner, project))
         try:
             ComplexLogic.delete_copr(copr)
         except (ActionInProgressException,
@@ -173,21 +175,23 @@ class CoprR(Resource):
 
         return None, 204
 
-    def get(self, owner_name, project_name):
+    def get(self, owner, project):
         parser = reqparse.RequestParser()
         parser.add_argument('show_builds', type=bool, default=True)
         parser.add_argument('show_chroots', type=bool, default=True)
         req_args = parser.parse_args()
 
-        copr = get_one_safe(CoprsLogic.get(flask.g.user, owner_name, project_name),
-                            "Copr {}/{} not found".format(owner_name, project_name))
+        copr = get_one_safe(CoprsLogic.get(flask.g.user, owner, project),
+                            "Copr {}/{} not found".format(owner, project))
         return {
             "links": {
                 "self": url_for(CoprR.endpoint,
-                                owner_name=owner_name,
-                                project_name=project_name),
+                                owner=owner,
+                                project=project),
                 # "chroots":
-                # "builds":
+                "builds": url_for(BuildListR.endpoint,
+                                  owner=copr.owner.name,
+                                  project=copr.name)
             },
             "copr": copr.to_dict()
         }

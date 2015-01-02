@@ -4,6 +4,20 @@ import json
 import sqlalchemy.orm.exc
 from .exceptions import ObjectNotFoundError, MalformedRequest
 
+from flask import Response, url_for, Blueprint
+
+
+def bp_url_for(endpoint, *args, **kwargs):
+    """
+        Prepend endpoing with dot
+    :param endpoint:
+    :param args:
+    :param kwargs:
+    :return:
+    """
+
+    return url_for(".{}".format(endpoint), *args, **kwargs)
+
 
 def get_one_safe(query, data_on_error=None):
     try:

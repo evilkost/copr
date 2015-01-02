@@ -2,10 +2,11 @@
 
 import flask
 from flask import url_for
+from flask_restful_swagger import swagger
 from coprs.logic.coprs_logic import CoprsLogic
 from coprs.logic.builds_logic import BuildsLogic
 
-from coprs.rest_api.util import get_one_safe
+from coprs.rest_api.util import get_one_safe, bp_url_for
 
 from flask_restful import Resource, reqparse
 
@@ -40,27 +41,56 @@ class BuildListR(Resource):
         builds = query.all()
         return {
             "links": {
-                "self": url_for(BuildListR.endpoint, **req_args),
+                "self": bp_url_for(BuildListR.endpoint, **req_args),
             },
             "builds": [
                 {
                     "build": build.to_dict(),
-                    "link": url_for(BuildR.endpoint, build_id=build.id),
+                    "link": bp_url_for(BuildR.endpoint, build_id=build.id),
                 } for build in builds
             ]
         }
 
 
+@swagger.model
+class BuildItem(object):
+    def __init__(self, build_id):
+        pass
+
 class BuildR(Resource):
-
+    @swagger.operation(
+        # summary='Get single build by id',
+        # responseClass=BuildItem.__name__,
+        # responseMessages=[
+        #     {
+        #         "code": 404,
+        #         "message": "No such build"
+        #     }
+        # ]
+        # nickname='get',
+        # Parameters can be automatically extracted from URLs (e.g. <string:id>)
+        # but you could also override them here, or add other parameters.
+        # parameters=[
+        #     {
+        #         "name": "build_id",
+        #         "description": "Build id for lookup",
+        #         "required": True,
+        #         "allowMultiple": False,
+        #         "dataType": 'int',
+        #         "paramType": "path"
+        #     },
+        # ]
+    )
     def get(self, build_id):
-
+        """
+        Get single build by id
+        """
         build = get_one_safe(BuildsLogic.get(build_id),
                              "Not found build with id: {}".format(build_id))
         return {
             "build": build.to_dict(),
             "links": {
-                "self": url_for(BuildR.endpoint, build_id=build_id),
+                "self": bp_url_for(BuildR.endpoint, build_id=build_id),
                 # TODO: can't do it due to circular imports
                 # "parent_copr": url_for(CoprR.endpoint,
                 #                        owner=build.copr.owner.name,

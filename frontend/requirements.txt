@@ -14,3 +14,4 @@ pyLibravatar
 pydns
 flexmock
 decorator
+flask-restful-swagger

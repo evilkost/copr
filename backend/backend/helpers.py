@@ -16,12 +16,20 @@ import datetime
 
 from copr.client import CoprClient
 
-from backend.constants import DEF_BUILD_USER, DEF_BUILD_TIMEOUT
+from backend.constants import DEF_BUILD_USER, DEF_BUILD_TIMEOUT, DEF_CONSECUTIVE_FAILURE_THRESHOLD, \
+    CONSECUTIVE_FAILURE_REDIS_KEY
 from backend.exceptions import CoprBackendError
+
+from redis import StrictRedis
+
+try:
+    import fedmsg
+except ImportError:
+    # fedmsg is optional
+    fedmsg = None
 
 
 class SortedOptParser(optparse.OptionParser):
-
     """Optparser which sorts the options by opt before outputting --help"""
 
     def format_help(self, formatter=None):
@@ -146,8 +154,13 @@ class BackendConfigReader(object):
             cp, "backend", "sleeptime", 10, mode="int")
         opts.timeout = _get_conf(
             cp, "builder", "timeout", DEF_BUILD_TIMEOUT, mode="int")
+        opts.consecutive_failure_threshold = _get_conf(
+            cp, "builder", "consecutive_failure_threshold",
+            DEF_CONSECUTIVE_FAILURE_THRESHOLD, mode="int")
         opts.logfile = _get_conf(
             cp, "backend", "logfile", "/var/log/copr/backend.log")
+        opts.error_logfile = _get_conf(
+            cp, "backend", "error_logfile", "/var/log/copr/backend_error.log")
         opts.verbose = _get_conf(
             cp, "backend", "verbose", False, mode="bool")
         opts.worker_logdir = _get_conf(
@@ -196,3 +209,48 @@ def log(lf, msg, quiet=None):
                 "Could not write to logfile {0} - {1}\n".format(lf, str(e)))
     if not quiet:
         print(msg)
+
+
+def register_build_result(opts=None, failed=False, origin=None):
+    """
+    Remember fails and notify about problem when threshold are exceeded.
+    Successful build resets counter to zero.
+
+    :param opts: BackendConfig, when opts not provided default config location will be used
+    :param boolean failed: failure flag
+    :param str origin: name of component produced failure, default: `builder`
+    """
+    if opts is None:
+        opts = BackendConfigReader().read()
+
+    # def notify():
+    #     msg = ("Too many consecutive failed builds. "
+    #            "Check copr-backend or/and VM provider\n")
+    #     if origin:
+    #         msg += "Error origin: {}".format(origin)
+    #
+    #     if opts.enable_fedmsg and fedmsg:
+    #         fedmsg.publish(
+    #             modname="copr",
+    #             topic="build.failure",
+    #             msg="Failed to build (or start builder), error comes from {}".format(origin),
+    #         )
+    #     else:
+    #         with open(opts.backend_logfile, "a") as lf:
+    #             lf.write("Too many consecutive failed builds. "
+    #                      "Check copr-backend or/and VM provider\n")
+
+    # TODO: add config options to specify redis host, port
+    conn = StrictRedis()  # connecting to default local redis instance
+
+    key = CONSECUTIVE_FAILURE_REDIS_KEY
+    if not failed:
+        conn.set(key, 0)
+    else:
+        # value = int(conn.get(key) or 0)
+        # if value > opts.consecutive_failure_threshold:
+        #     # notify()
+        #     conn.set(key, 0)
+        # else:
+        conn.incr(key)
+

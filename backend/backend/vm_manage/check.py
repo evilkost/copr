@@ -5,15 +5,19 @@ import weakref
 import ansible
 import ansible.runner
 import ansible.utils
+import time
 
 from ..exceptions import MockRemoteError, CoprWorkerError, CoprWorkerSpawnFailError
 
 
 class HealthChecker(object):
 
-    def __init__(self, opts, callback):
+    def __init__(self, opts, events):
         self.opts = weakref.proxy(opts)
-        self.callback = weakref.proxy(callback)
+        self.events = events
+
+    def log(self, msg):
+        self.events.put({"when": time.time(), "who": "health_checker", "what": msg})
 
     def check_health(self, vm_ip):
         """

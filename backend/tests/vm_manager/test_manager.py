@@ -2,9 +2,11 @@
 import copy
 
 from collections import defaultdict
+import json
 import types
 from bunch import Bunch
 import time
+from multiprocessing import Queue
 from backend import exceptions
 from backend.exceptions import MockRemoteError, CoprSignError, BuilderError
 
@@ -13,9 +15,9 @@ import shutil
 import os
 
 import six
-from backend.vm_manage import VmStates, Thresholds, KEY_VM_POOL, PUBSUB_VM_TERMINATION
+from backend.vm_manage import VmStates, Thresholds, KEY_VM_POOL, PUBSUB_VM_TERMINATION, PUBSUB_SPAWNER
 from backend.vm_manage.check import HealthChecker
-from backend.vm_manage.manager import VmManager
+from backend.vm_manage.manager import VmManager, VmManagerDaemon
 from backend.vm_manage.models import VmDescriptor
 
 if six.PY3:
@@ -60,10 +62,17 @@ class TestManager(object):
         self.callback = TestCallback()
         # checker = HealthChecker(self.opts, self.callback)
         self.checker = MagicMock()
+        self.spawner = MagicMock()
         self.terminator = MagicMock()
 
-        self.test_vmm = VmManager(self.opts, callback=self.callback, checker=self.checker)
+        self.queue = Queue()
+        self.test_vmm = VmManager(self.opts, self.queue,
+                                         checker=self.checker,
+                                         spawner=self.spawner,
+                                         terminator=self.terminator)
         self.test_vmm.post_init()
+
+        self.vm_daemon = VmManagerDaemon(self.test_vmm)
 
         self.vm_ip = "127.0.0.1"
         self.vm_name = "localhost"
@@ -72,7 +81,8 @@ class TestManager(object):
 
     def teardown_method(self, method):
         keys = self.test_vmm.rc.keys("*")
-        self.test_vmm.rc.delete(*keys)
+        if keys:
+            self.test_vmm.rc.delete(*keys)
 
     def test_add_vm_to_pool(self):
         self.test_vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
@@ -169,12 +179,14 @@ class TestManager(object):
         mc_do_vm_check = MagicMock()
         self.test_vmm.do_vm_check = types.MethodType(mc_do_vm_check, self.test_vmm)
         assert not self.test_vmm.do_vm_check.called
-        self.test_vmm.check_ready_vms()
+
+        self.vm_daemon.check_ready_vms()
+
         assert self.test_vmm.do_vm_check.called
         assert not any(call_args[0][1] == "alternative" for call_args in mc_do_vm_check.call_args_list)
 
         mc_time.time.return_value = 1 + Thresholds.health_check_period * 2
-        self.test_vmm.check_ready_vms()
+        self.vm_daemon.check_ready_vms()
         assert any(call_args[0][1] == "alternative" for call_args in mc_do_vm_check.call_args_list)
 
     def test_remove_vm_from_pool_only_terminated(self):
@@ -235,3 +247,18 @@ class TestManager(object):
         assert msg["data"] == VmStates.TERMINATING
         assert msg["type"] == "message"
 
+    def test_register_spawned_vms(self):
+        self.vm_daemon.subscribe_pubsub_channels()
+        time.sleep(0.001)
+
+        spawned_dict = {"vm_name": self.vm_name, "ip": self.vm_ip, "group": self.group}
+        self.test_vmm.rc.publish(PUBSUB_SPAWNER, json.dumps(spawned_dict))
+
+        time.sleep(0.2)
+        self.vm_daemon.register_spawned_vms()
+        self.vm_daemon.register_spawned_vms()
+
+        vmd = self.test_vmm.get_vm_by_name(self.vm_name)
+        assert vmd.vm_ip == self.vm_ip
+        assert vmd.state == VmStates.GOT_IP
+        # print("XXX>{}<".format(vmd))

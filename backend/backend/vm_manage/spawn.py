@@ -1,5 +1,6 @@
 # coding: utf-8
 import json
+import os
 
 import re
 
@@ -10,7 +11,7 @@ import time
 from multiprocessing import Process, Queue
 from redis import StrictRedis
 
-from ..ans_utils import run_ansible_playbook
+from ..ans_utils import run_ansible_playbook, run_ansible_playbook_once
 from backend.helpers import get_redis_connection
 from backend.vm_manage import PUBSUB_SPAWNER
 from ..exceptions import CoprWorkerSpawnFailError
@@ -26,7 +27,8 @@ def try_spawn(args, log_fn=None):
     if log_fn is None:
         log_fn = lambda x: pprint(x)
 
-    result = run_ansible_playbook(args, "spawning instance")
+    result = run_ansible_playbook(args, name="spawning instance",
+                                  retry_sleep_time=10.0, attempts=1)
     if not result:
         raise CoprWorkerSpawnFailError("No result, trying again")
     match = re.search(r'IP=([^\{\}"]+)', result, re.MULTILINE)
@@ -74,7 +76,11 @@ def spawn_instance(spawn_playbook, log_fn=None):
     # https://groups.google.com/forum/#!topic/ansible-project/DNBD2oHv5k8
 
     spawn_args = "-c ssh {}".format(spawn_playbook)
-    result = run_ansible_playbook(spawn_args, "spawning instance")
+    try:
+        result = run_ansible_playbook_once(spawn_args, name="spawning instance", log_fn=log_fn)
+    except Exception as err:
+        raise CoprWorkerSpawnFailError("Error during ansible invocation: {}".format(err.__dict__))
+
     if not result:
         raise CoprWorkerSpawnFailError("No result, trying again")
     match = re.search(r'IP=([^\{\}"]+)', result, re.MULTILINE)
@@ -108,9 +114,14 @@ def do_spawn_and_publish(opts, events, spawn_playbook, group):
         events.put({"when": time.time(), "who": "spawner", "what": msg})
 
     try:
+        log_fn("Going to spawn")
         spawn_result = spawn_instance(spawn_playbook, log_fn)
+        log_fn("Spawn finished")
     except CoprWorkerSpawnFailError as err:
         log_fn("Failed to spawn builder: {}".format(err))
+        return
+    except Exception as err:
+        log_fn("[Unexpected] Failed to spawn builder: {}".format(err))
         return
 
     spawn_result["group"] = group
@@ -141,8 +152,13 @@ class Spawner(object):
         self.recycle()
         try:
             spawn_playbook = self.opts.build_groups[group]["spawn_playbook"]
+            os.path.exists(spawn_playbook)
         except KeyError:
             msg = "Config missing playbook for group: {}".format(group)
+            self.log(msg)
+            raise CoprWorkerSpawnFailError(msg)
+        except OSError:
+            msg = "Playbook {} is missing".format(spawn_playbook)
             self.log(msg)
             raise CoprWorkerSpawnFailError(msg)
 
@@ -171,5 +187,4 @@ class Spawner(object):
     def still_working(self):
         self.recycle()
         return len(self.child_processes) > 0
-
 

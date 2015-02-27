@@ -4,6 +4,7 @@ import subprocess
 from subprocess import CalledProcessError
 import sys
 import time
+from backend.exceptions import CoprWorkerSpawnFailError
 
 ansible_playbook_bin = "ansible-playbook"
 
@@ -15,7 +16,26 @@ def ans_extra_vars_encode(extra_vars, name):
     return "--extra-vars='{{\"{0}\": {1}}}'".format(name, json.dumps(extra_vars))
 
 
-def run_ansible_playbook(args, retry_sleep_time=30, name="running playbook", callback=None, attempts=9):
+def run_ansible_playbook_once(args, name="running playbook", log_fn=None):
+    if log_fn is None:
+        log = lambda x: sys.stderr.write("{}\n".format(x))
+    else:
+        log = log_fn
+
+    command = "{} {}".format(ansible_playbook_bin, args)
+    try:
+        log("{}: begin: {}".format(name, command))
+        result = subprocess.check_output(command, shell=True)
+        log("Raw playbook output: {0}".format(result))
+    except CalledProcessError as e:
+        log("CalledProcessError: {}".format(e.output))
+        # FIXME: this is not purpose of opts.sleeptime
+        raise
+
+    log(name + ": end")
+    return result
+
+def run_ansible_playbook(args, name="running playbook", retry_sleep_time=30, callback=None, log_fn=None, attempts=9):
     """
     Call ansible playbook:
 
@@ -26,10 +46,17 @@ def run_ansible_playbook(args, retry_sleep_time=30, name="running playbook", cal
 
     # Ansible playbook python API does not work here, dunno why.  See:
     # https://groups.google.com/forum/#!topic/ansible-project/DNBD2oHv5k8
-    if callback is None:
-        log = lambda x: None
+    if log_fn is None:
+        if callback is None:
+            log = lambda x: None
+        else:
+            log = lambda x: callback.log(x)
     else:
-        log = lambda x: callback.log(x)
+        log = log_fn
+    # if callback is None:
+    #     log = lambda x: None
+    # else:
+    #     log = lambda x: callback.log(x)
 
     command = "{} {}".format(ansible_playbook_bin, args)
     result = None

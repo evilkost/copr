@@ -25,6 +25,11 @@ from .job_grab import CoprJobGrab
 from .log import CoprBackendLog
 from .dispatcher import Worker
 
+from ..vm_manage.manager import VmManager, VmManagerDaemon
+from ..vm_manage.spawn import Spawner
+from ..vm_manage.check import HealthChecker
+from ..vm_manage.terminate import Terminator
+
 
 class CoprBackend(object):
 
@@ -101,8 +106,21 @@ class CoprBackend(object):
 
         self.event("Starting up Job Grabber")
 
-        self._jobgrab = CoprJobGrab(self.opts, self.events, self.lock)
-        self._jobgrab.start()
+        # self._jobgrab = CoprJobGrab(self.opts, self.events, self.lock)
+        # self._jobgrab.start()
+
+        self.spawner = Spawner(self.opts, self.events)
+        self.checker = HealthChecker(self.opts, self.events)
+        self.terminator = Terminator(self.opts, self.events)
+
+        self.vm_manager = VmManager(self.opts, self.events,
+                                    checker=self.checker,
+                                    spawner=self.spawner,
+                                    terminator=self.terminator)
+        self.vm_manager.post_init()
+        self.vmm_daemon = VmManagerDaemon(self.vm_manager)
+        self.vmm_daemon.start()
+
 
     def event(self, what):
         """
@@ -190,7 +208,7 @@ class CoprBackend(object):
             # re-read config into opts
             self.update_conf()
 
-            for group in self.opts.build_groups:
+            for group in []: #self.opts.build_groups:
                 group_id = group["id"]
                 self.event("# jobs in {0} queue: {1}"
                            .format(group["name"], self.task_queues[group_id].length))

@@ -39,7 +39,7 @@ class CoprJobGrab(Process):
 
     def __init__(self, opts, events, lock):
         # base class initialization
-        Process.__init__(self, name="jobgrab")
+        super(CoprJobGrab, self).__init__(name="jobgrab")
 
         self.opts = opts
         self.events = events

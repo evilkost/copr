@@ -33,7 +33,7 @@ class VmDescriptor(object):
     @classmethod
     def load(cls, rc, vm_name):
         raw = rc.hgetall(KEY_VM_INSTANCE.format(vm_name=vm_name))
-        if raw is None:
+        if not raw:
             raise Exception("VmDescriptor for `{}` not found".format(vm_name))
         return cls.from_dict(raw)
 

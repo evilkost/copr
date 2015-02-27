@@ -124,7 +124,6 @@ class TestSpawner(object):
         assert json.loads(msg["data"]) == mc_spawn_instance.return_value
 
         logged = self._get_all_from_queue()
-        print("\n Logged: {}".format(logged))
 
     def test_start_spawn(self, mc_spawn_instance):
         mc_spawn_instance.return_value = {"vm_name": self.vm_name, "ip": self.vm_ip}
@@ -133,9 +132,9 @@ class TestSpawner(object):
         start = time.time()
         while self.spawner.still_working():
             time.sleep(0.002)
-            print("time: {}".format(time.time() - start))
+            # print("time: {}".format(time.time() - start))
 
-        print("Still alive: {}".format(self.spawner.still_working()))
-
-        for ev in self._get_all_from_queue():
-            pprint(ev)
+        # print("Still alive: {}".format(self.spawner.still_working()))
+        #
+        # for ev in self._get_all_from_queue():
+        #     pprint(ev)

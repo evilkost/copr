@@ -16,6 +16,9 @@ from IPy import IP
 from retask.queue import Queue
 
 from ..ans_utils import ans_extra_vars_encode, run_ansible_playbook
+from ..vm_manage.manager import VmManager
+
+
 from ..mockremote.callback import CliLogCallBack
 from ..exceptions import MockRemoteError, CoprWorkerError, CoprWorkerSpawnFailError
 from ..job import BuildJob
@@ -640,6 +643,12 @@ class Worker(multiprocessing.Process):
             title += str(suffix)
 
         setproctitle(title)
+
+    # def run(self):
+    #
+    #
+    #     while not self.kill_received:
+    #         pass
 
     def run(self):
         """

@@ -10,7 +10,7 @@ from retask import ConnectionError
 import six
 import sys
 
-from backend.daemons import CoprBackend, run_backend
+from backend.daemons.backend import CoprBackend, run_backend
 from backend.exceptions import CoprBackendError
 
 if six.PY3:

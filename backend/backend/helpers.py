@@ -3,24 +3,20 @@ from __future__ import unicode_literals
 from __future__ import division
 from __future__ import absolute_import
 import fcntl
-
 from operator import methodcaller
 import optparse
 import ConfigParser
 import os
 import sys
-import time
-
-from bunch import Bunch
 import datetime
 
-from copr.client import CoprClient
+from bunch import Bunch
+from redis import StrictRedis
 
+from copr.client import CoprClient
 from backend.constants import DEF_BUILD_USER, DEF_BUILD_TIMEOUT, DEF_CONSECUTIVE_FAILURE_THRESHOLD, \
     CONSECUTIVE_FAILURE_REDIS_KEY
 from backend.exceptions import CoprBackendError
-
-from redis import StrictRedis
 
 try:
     import fedmsg
@@ -238,4 +234,6 @@ def register_build_result(opts=None, failed=False):
         conn.set(key, 0)
     else:
         conn.incr(key)
+
+
 

@@ -40,6 +40,10 @@ def mc_register_build_result(*args, **kwargs):
     yield obj
     patcher.stop()
 
+@pytest.yield_fixture
+def mc_run_ans():
+    with mock.patch("backend.daemons.dispatcher.run_ansible_playbook") as handle:
+        yield handle
 
 class TestDispatcher(object):
 
@@ -222,9 +226,7 @@ class TestDispatcher(object):
         assert len(self.worker.try_spawn.call_args_list) == 2
         assert len(self.worker.validate_vm.call_args_list) == 1
 
-    def test_spawn_instance_error_once_validate_new_vm(self, init_worker):
-        self.worker.run_ansible_playbook = MagicMock()
-
+    def test_spawn_instance_error_once_validate_new_vm(self, init_worker, mc_run_ans):
         self.worker.try_spawn = MagicMock()
         self.worker.try_spawn.return_value = self.vm_ip
         self.worker.validate_vm = MagicMock()
@@ -251,33 +253,33 @@ class TestDispatcher(object):
 
         assert self.worker.try_spawn.call_args == mock.call(self.try_spawn_args)
 
-    def test_try_spawn_ansible_error_no_result(self, init_worker):
-        mc_run_ans = MagicMock()
-        self.worker.run_ansible_playbook = mc_run_ans
+    def test_try_spawn_ansible_error_no_result(self, init_worker, mc_run_ans):
+        # mc_run_ans = MagicMock()
+        # self.worker.run_ansible_playbook = mc_run_ans
         mc_run_ans.return_value = None
 
         with pytest.raises(CoprWorkerSpawnFailError):
             self.worker.try_spawn(self.try_spawn_args)
 
-    def test_try_spawn_ansible_ok_no_vm_name(self, init_worker):
-        mc_run_ans = MagicMock()
-        self.worker.run_ansible_playbook = mc_run_ans
+    def test_try_spawn_ansible_ok_no_vm_name(self, init_worker, mc_run_ans):
+        # mc_run_ans = MagicMock()
+        # self.worker.run_ansible_playbook = mc_run_ans
         mc_run_ans.return_value = "foobar IP={}".format(self.vm_ip)
 
         assert self.worker.try_spawn(self.try_spawn_args) == self.vm_ip
 
-    def test_try_spawn_ansible_ok_with_vm_name(self, init_worker):
-        mc_run_ans = MagicMock()
-        self.worker.run_ansible_playbook = mc_run_ans
+    def test_try_spawn_ansible_ok_with_vm_name(self, init_worker, mc_run_ans):
+        # mc_run_ans = MagicMock()
+        # self.worker.run_ansible_playbook = mc_run_ans
         mc_run_ans.return_value = "foobar \"IP={}\" adsf \"vm_name={}\"".format(
             self.vm_ip, self.vm_name)
 
         assert self.worker.try_spawn(self.try_spawn_args) == self.vm_ip
         assert self.worker.vm_name == self.vm_name
 
-    def test_try_spawn_ansible_bad_ip_no_vm_name(self, init_worker):
-        mc_run_ans = MagicMock()
-        self.worker.run_ansible_playbook = mc_run_ans
+    def test_try_spawn_ansible_bad_ip_no_vm_name(self, init_worker, mc_run_ans):
+        # mc_run_ans = MagicMock()
+        # self.worker.run_ansible_playbook = mc_run_ans
         for bad_ip in ["256.0.0.2", "not-an-ip", "example.com", ""]:
             mc_run_ans.return_value = "foobar IP={}".format(bad_ip)
 
@@ -313,9 +315,9 @@ class TestDispatcher(object):
             self.worker.validate_vm()
         assert mc_ans_conn.run.called
 
-    def test_terminate_instance(self, init_worker, reg_vm):
-        mc_run_ans = MagicMock()
-        self.worker.run_ansible_playbook = mc_run_ans
+    def test_terminate_instance(self, init_worker, reg_vm, mc_run_ans):
+        # mc_run_ans = MagicMock()
+        # self.worker.run_ansible_playbook = mc_run_ans
 
         self.worker.terminate_instance()
         assert mc_run_ans.called
@@ -326,9 +328,9 @@ class TestDispatcher(object):
         assert self.worker.vm_ip is None
         assert self.worker.vm_name is None
 
-    def test_terminate_instance_with_vm_name(self, init_worker, reg_vm):
-        mc_run_ans = MagicMock()
-        self.worker.run_ansible_playbook = mc_run_ans
+    def test_terminate_instance_with_vm_name(self, init_worker, reg_vm, mc_run_ans):
+        # mc_run_ans = MagicMock()
+        # self.worker.run_ansible_playbook = mc_run_ans
         self.opts.terminate_vars = ["vm_name"]
 
         self.worker.terminate_instance()
@@ -342,9 +344,9 @@ class TestDispatcher(object):
         assert self.worker.vm_ip is None
         assert self.worker.vm_name is None
 
-    def test_terminate_instance_with_ip_and_vm_name(self, init_worker, reg_vm):
-        mc_run_ans = MagicMock()
-        self.worker.run_ansible_playbook = mc_run_ans
+    def test_terminate_instance_with_ip_and_vm_name(self, init_worker, reg_vm, mc_run_ans):
+        # mc_run_ans = MagicMock()
+        # self.worker.run_ansible_playbook = mc_run_ans
         self.opts.terminate_vars = ["ip", "vm_name"]
 
         self.worker.terminate_instance()

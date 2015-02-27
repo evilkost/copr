@@ -3,32 +3,27 @@ import os
 import sys
 import time
 import fcntl
-import json
 import subprocess
 from subprocess import CalledProcessError
 import multiprocessing
+from setproctitle import setproctitle
 
 import ansible
 import ansible.runner
 import ansible.utils
-
 from ansible.errors import AnsibleError
-
-from setproctitle import setproctitle
 from IPy import IP
 from retask.queue import Queue
 
-
-
+from ..ans_utils import ans_extra_vars_encode, run_ansible_playbook
 from ..mockremote.callback import CliLogCallBack
-
 from ..exceptions import MockRemoteError, CoprWorkerError, CoprWorkerSpawnFailError
 from ..job import BuildJob
-
 from ..mockremote import MockRemote
 from ..frontend import FrontendClient
 from ..constants import BuildStatus
 from ..helpers import register_build_result
+
 
 ansible_playbook = "ansible-playbook"
 
@@ -37,13 +32,6 @@ try:
 except ImportError:
     # fedmsg is optional
     fedmsg = None
-
-
-def ans_extra_vars_encode(extra_vars, name):
-    """ transform dict into --extra-vars="json string" """
-    if not extra_vars:
-        return ""
-    return "--extra-vars='{{\"{0}\": {1}}}'".format(name, json.dumps(extra_vars))
 
 
 class WorkerCallback(object):
@@ -72,6 +60,9 @@ class WorkerCallback(object):
             except (IOError, OSError) as e:
                 sys.stderr.write("Could not write to logfile {0} - {1}\n"
                                  .format(self.logfile, str(e)))
+
+
+
 
 
 # TODO: Extract VmManager class
@@ -280,7 +271,9 @@ class Worker(multiprocessing.Process):
         :param args: ansible for ansible command which spawns VM
         :return str: valid ip address of new machine (nobody guarantee machine availability)
         """
-        result = self.run_ansible_playbook(args, "spawning instance")
+        #result = self.run_ansible_playbook(args, "spawning instance")
+        result = run_ansible_playbook(args, name="spawning instance",
+                                      retry_sleep_time=self.opts.sleeptime)
         if not result:
             raise CoprWorkerSpawnFailError("No result, trying again")
         match = re.search(r'IP=([^\{\}"]+)', result, re.MULTILINE)
@@ -377,7 +370,7 @@ class Worker(multiprocessing.Process):
             ans_extra_vars_encode(term_args, "copr_task"))
 
         try:
-            self.run_ansible_playbook(args, "terminate instance")
+            run_ansible_playbook(args, "terminate instance")
         except Exception as error:
             self.callback.log("Failed to terminate an instance: vm_name={}, vm_ip={}. Original error: {}"
                               .format(self.vm_name, self.vm_ip, error))

@@ -4,6 +4,7 @@ import copy
 from collections import defaultdict
 import types
 from bunch import Bunch
+import time
 from backend import exceptions
 from backend.exceptions import MockRemoteError, CoprSignError, BuilderError
 
@@ -12,8 +13,8 @@ import shutil
 import os
 
 import six
-from backend.vm_manage import VmStates, Thresholds, KEY_VM_POOL
-from backend.vm_manage.checker import HealthChecker
+from backend.vm_manage import VmStates, Thresholds, KEY_VM_POOL, PUBSUB_VM_TERMINATION
+from backend.vm_manage.check import HealthChecker
 from backend.vm_manage.manager import VmManager
 from backend.vm_manage.models import VmDescriptor
 
@@ -190,7 +191,7 @@ class TestManager(object):
 
         assert self.test_vmm.rc.scard(KEY_VM_POOL.format(group=self.group)) == 0
 
-    def test_terminate(self):
+    def test_terminate(self, capsys):
         my_remove = self.test_vmm.remove_vm_from_pool
         self.test_vmm.remove_vm_from_pool = types.MethodType(MagicMock(), self.test_vmm)
         self.test_vmm.terminator = self.terminator
@@ -209,4 +210,28 @@ class TestManager(object):
         self.test_vmm.get_vm_by_name(self.vm_name).store_field(self.test_vmm.rc, "state", VmStates.READY)
         self.test_vmm.terminate_vm(self.vm_name)
         assert not self.test_vmm.remove_vm_from_pool.called
+
+        capsys.readouterr()
+
+    def test_terminate_publish(self):
+        self.test_vmm.terminator = self.terminator
+        self.test_vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
+
+        ps = self.test_vmm.rc.pubsub(ignore_subscribe_messages=True)
+        ps.subscribe(PUBSUB_VM_TERMINATION.format(vm_name=self.vm_name))
+        while True:
+            if ps.get_message() is None:
+                break
+
+        assert ps.get_message() is None
+        self.test_vmm.terminate_vm(self.vm_name)
+        time.sleep(0.2)
+        msg = None
+        while msg is None:
+            msg = ps.get_message()
+            time.sleep(0.1)
+
+        assert ps.get_message() is None
+        assert msg["data"] == VmStates.TERMINATING
+        assert msg["type"] == "message"
 

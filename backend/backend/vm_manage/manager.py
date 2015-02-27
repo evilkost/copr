@@ -2,13 +2,15 @@
 
 # import threading
 from itertools import chain
+import json
 
 import time
 import weakref
 from redis import StrictRedis
 
 from .models import VmDescriptor
-from . import VmStates, KEY_VM_INSTANCE, KEY_VM_POOL, Thresholds, KEY_VM_GROUPS, PUBSUB_VM_TERMINATION
+from . import VmStates, KEY_VM_INSTANCE, KEY_VM_POOL, Thresholds, KEY_VM_GROUPS, PUBSUB_VM_TERMINATION, KEY_VM_POOL_INFO, \
+    PUBSUB_SPAWNER
 
 # KEYS [1]: VMD key
 # ARGS: None
@@ -149,7 +151,7 @@ class VmManager(object):
     def terminate_vm(self, vm_name):
         vmd = self.get_vm_by_name(vm_name)
         vmd.store_field(self.rc, "state", VmStates.TERMINATING)
-        self.rc.publish(PUBSUB_VM_TERMINATION, vm_name)
+        self.rc.publish(PUBSUB_VM_TERMINATION.format(vm_name=vm_name), VmStates.TERMINATING)
 
         try:
             self.terminator.terminate(vm_ip=vmd.vm_ip, vm_name=vm_name, group=vmd.group)
@@ -200,11 +202,42 @@ class VmManager(object):
                 continue
             self.do_vm_check(vmd.vm_name)
 
-    def spawn_if_required(self):
+    def start_spawn_if_required(self):
+        for group in range(self.opts.build_groups_count):
+            max_vm_total = self.opts.build_groups[group]["max_vm_total"]
+            if self.rc.scard(KEY_VM_POOL) >= max_vm_total:
+                continue
+            time_since_last_spawn = time.time() - float(self.rc.hget(KEY_VM_POOL_INFO.format(group=group)))
+            if time_since_last_spawn < Thresholds.vm_spawn_min_interval:
+                continue
+
         # here we should provide some complex logic to
         # 1) rate-limit VM creation
         # 2) spawn new vms in advance fast enough
         pass
+
+    def register_spawned_vms(self):
+        while True:
+            raw = self.spawner_channel.get_message()
+            if raw is None:
+                break
+            if raw["type"] != "message":
+                continue
+
+            msg = json.loads(raw["data"])
+            # format {"group": 1, "vm_name": "builder 1245", "ip": 192.168.25.2}
+            self.add_vm_to_pool(msg["ip"], msg["vm_name"], msg["group"])
+
+    def subscribe_pubsub_channels(self):
+        self.spawner_channel = self.rc.pubsub(ignore_subscribe_messages=True)
+        self.spawner_channel.subscribe(PUBSUB_SPAWNER)
+        # self.spawner_channel.get_message()
+        # self.spawner_channel.get_message()
+
+        self.spawner_channel = self.rc.pubsub(ignore_subscribe_messages=True)
+        self.spawner_channel.subscribe(PUBSUB_SPAWNER)
+        # self.spawner_channel.get_message()
+        # self.spawner_channel.get_message()
 
     def terminate_abandoned_vms(self):
         # If builder process forget about vm clean up, we should terminate it (more safe than marking it ready)
@@ -214,16 +247,17 @@ class VmManager(object):
         pass
 
     def do_cycle(self):
-        # each check should be runnable in threads
+        # TODO: each check should be executed in threads ... and finish with join?
         self.terminate_abandoned_vms()
         self.remove_old_dirty_vms()
         self.check_ready_vms()
-        self.spawn_if_required()
+        self.start_spawn_if_required()
         # self.check_vm_in_use() # detect broken VMS faster
 
-    def run_daemon(self):
+    def run_loop(self):
         if self.spawner is None or self.terminator is None:
             raise RuntimeError("provide Spawner and Terminator to run VmManager daemon")
+
 
         while True:
             time.sleep(Thresholds.cycle_timeout)

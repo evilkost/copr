@@ -23,8 +23,7 @@ class HealthChecker(object):
         :raises: :py:class:`~backend.exceptions.CoprWorkerSpawnFailError`: validation fails
         """
         runner_options = dict(
-            # remote_user="root",
-            remote_user="vgologuz",
+            remote_user="root",
             host_list="{},".format(vm_ip),
             pattern=vm_ip,
             forks=1,

@@ -124,7 +124,7 @@ class BackendConfigReader(object):
             cp, "backend", "build_groups", 1, mode="int")
 
         opts.build_groups = []
-        for group_id in range(int(opts.build_groups_count)):
+        for group_id in range(opts.build_groups_count):
             archs = _get_conf(cp, "backend",
                               "group{0}_archs".format(group_id),
                               default="i386,x86_64").split(",")
@@ -140,7 +140,14 @@ class BackendConfigReader(object):
                     default="/srv/copr-work/provision/terminatepb-PC.yml"),
                 "max_workers": _get_conf(
                     cp, "backend", "group{0}_max_workers".format(group_id),
-                    default=8, mode="int")
+                    default=32, mode="int"),
+                "max_vm_total": _get_conf(
+                    cp, "backend", "group{}_max_vm_total".format(group_id),
+                    default=16, mode="int"),
+                "max_vm_per_user": _get_conf(
+                    cp, "backend", "group{}_max_vm_total".format(group_id),
+                    default=2, mode="int"),
+
             }
             opts.build_groups.append(group)
 

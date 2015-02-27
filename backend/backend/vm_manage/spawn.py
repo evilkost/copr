@@ -1,5 +1,6 @@
 # coding: utf-8
 
+
 class Spawner(object):
 
     def __init__(self, opts):

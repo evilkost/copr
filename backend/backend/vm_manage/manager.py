@@ -7,6 +7,7 @@ import json
 import time
 import weakref
 from redis import StrictRedis
+from backend.helpers import get_redis_connection
 
 from .models import VmDescriptor
 from . import VmStates, KEY_VM_INSTANCE, KEY_VM_POOL, Thresholds, KEY_VM_GROUPS, PUBSUB_VM_TERMINATION, KEY_VM_POOL_INFO, \
@@ -79,11 +80,7 @@ class VmManager(object):
 
     def post_init(self):
         # TODO: read redis host/post from opts
-        kwargs = {}
-        if hasattr(self.opts, "redis_db"):
-            kwargs["db"] = self.opts.redis_db
-        self.rc = StrictRedis(**kwargs)
-
+        self.rc = get_redis_connection(self.opts)
         self.lua_scripts["set_checking_state"] = self.rc.register_script(set_checking_state_lua)
         self.lua_scripts["acquire_vm"] = self.rc.register_script(acquire_vm_lua)
         self.lua_scripts["release_vm"] = self.rc.register_script(release_vm_lua)

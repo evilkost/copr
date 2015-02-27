@@ -31,7 +31,7 @@ def run_ansible_playbook(args, retry_sleep_time=30, name="running playbook", cal
     else:
         log = lambda x: callback.log(x)
 
-    command = "{0} {1}".format(ansible_playbook_bin, args)
+    command = "{} {}".format(ansible_playbook_bin, args)
     result = None
     for i in range(0, attempts):
         try:

@@ -236,4 +236,10 @@ def register_build_result(opts=None, failed=False):
         conn.incr(key)
 
 
+def get_redis_connection(opts):
+    # TODO: use host/port from opts
+    kwargs = {}
+    if hasattr(opts, "redis_db"):
+        kwargs["db"] = opts.redis_db
+    return StrictRedis(**kwargs)
 

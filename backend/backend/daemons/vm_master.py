@@ -53,7 +53,7 @@ class VmMaster(Process):
         #
         self.callback = None
         self.checker = None
-        self.spawner = None
+        self.spawner = Spawner(opts=opts, events=events)
         self.terminater = None
 
     def post_init(self):

@@ -45,6 +45,7 @@ def mc_run_ans():
     with mock.patch("backend.daemons.dispatcher.run_ansible_playbook") as handle:
         yield handle
 
+
 class TestDispatcher(object):
 
     def setup_method(self, method):

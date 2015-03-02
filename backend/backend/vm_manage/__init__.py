@@ -7,11 +7,23 @@ class VmStates(object):
     READY = "ready"
     IN_USE = "in_use"
     TERMINATING = "terminating"
-    TERMINATED = "terminated"  # can be safely removed from pool
+    #TERMINATED = "terminated"  # can be safely removed from pool
 
 # for IPC
-PUBSUB_TERMINATOR = "copr:backend:terminator:pubsub::"
-PUBSUB_SPAWNER = "copr:backend:spawner:pubsub::"
+PUBSUB_MB = "copr:backend:vm:pubsub::"
+
+
+class EventTopics(object):
+    HEALTH_CHECK = "health_check"
+    VM_SPAWNED = "vm_spawned"
+    VM_TERMINATION_REQUEST = "vm_termination_request"
+    VM_TERMINATED = "vm_terminated"
+
+#PUBSUB_CHECKER = "copr:backend:checker:pubsub::"
+#PUBSUB_TERMINATOR = "copr:backend:terminator:pubsub::"
+#PUBSUB_TERMINATION = "copr:backend:termination:pubsub::"
+#PUBSUB_TERMINATED = "copr:backend:terminated:pubsub::"
+# PUBSUB_SPAWNER = "copr:backend:spawner:pubsub::"
 
 
 PUBSUB_VM_TERMINATION = "copr:backend:vm_termination:pubsub::{vm_name}"
@@ -37,8 +49,9 @@ class Thresholds(object):
     Time constants for VM manager, all values are int and represents seconds
     """
     terminating_timeout = 600
-    health_check_period = 30
+    health_check_period = 15
     keep_vm_for_user_timeout = 600
     vm_spawn_min_interval = 20
     max_in_user_time = 3600 * 7
     cycle_timeout = 5
+    max_check_fails = 2

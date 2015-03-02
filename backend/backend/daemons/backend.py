@@ -25,7 +25,9 @@ from .job_grab import CoprJobGrab
 from .log import CoprBackendLog
 from .dispatcher import Worker
 
-from ..vm_manage.manager import VmManager, VmManagerDaemon
+from .vm_master import VmMaster
+
+from ..vm_manage.manager import VmManager
 from ..vm_manage.spawn import Spawner
 from ..vm_manage.check import HealthChecker
 from ..vm_manage.terminate import Terminator
@@ -106,8 +108,8 @@ class CoprBackend(object):
 
         self.event("Starting up Job Grabber")
 
-        # self._jobgrab = CoprJobGrab(self.opts, self.events, self.lock)
-        # self._jobgrab.start()
+        self._jobgrab = CoprJobGrab(self.opts, self.events, self.lock)
+        self._jobgrab.start()
 
         self.spawner = Spawner(self.opts, self.events)
         self.checker = HealthChecker(self.opts, self.events)
@@ -118,7 +120,7 @@ class CoprBackend(object):
                                     spawner=self.spawner,
                                     terminator=self.terminator)
         self.vm_manager.post_init()
-        self.vmm_daemon = VmManagerDaemon(self.vm_manager)
+        self.vmm_daemon = VmMaster(self.vm_manager)
         self.vmm_daemon.start()
 
 
@@ -245,8 +247,8 @@ def run_backend(opts):
     try:
         context = DaemonContext(
             pidfile=lockfile.FileLock(opts.pidfile),
-            gid=grp.getgrnam("copr").gr_gid,
-            uid=pwd.getpwnam("copr").pw_uid,
+            # gid=grp.getgrnam("copr").gr_gid,
+            # uid=pwd.getpwnam("copr").pw_uid,
             detach_process=opts.daemonize,
             umask=0o22,
             stderr=sys.stderr,

@@ -5,15 +5,18 @@ import os
 import re
 
 from pprint import pprint
+from setproctitle import setproctitle
 import weakref
 from IPy import IP
 import time
 from multiprocessing import Process, Queue
 from redis import StrictRedis
+import sys
 
 from ..ans_utils import run_ansible_playbook, run_ansible_playbook_once
-from backend.helpers import get_redis_connection
-from backend.vm_manage import PUBSUB_SPAWNER
+from backend.helpers import get_redis_connection, format_tb
+from backend.vm_manage import PUBSUB_MB, EventTopics
+from backend.vm_manage.executor import Executor
 from ..exceptions import CoprWorkerSpawnFailError
 
 
@@ -105,13 +108,16 @@ def spawn_instance(spawn_playbook, log_fn=None):
         raise CoprWorkerSpawnFailError(msg)
 
     log_fn("Instance spawn/provision took {0} sec".format(time.time() - start))
-    return {"ip": ipaddr, "vm_name": vm_name}
+    return {"vm_ip": ipaddr, "vm_name": vm_name}
 
 
 def do_spawn_and_publish(opts, events, spawn_playbook, group):
+    setproctitle("do_spawn_and_publish")
 
     def log_fn(msg):
         events.put({"when": time.time(), "who": "spawner", "what": msg})
+        # rc = get_redis_connection(opts)
+        # rc.publish("debug", str(msg))
 
     try:
         log_fn("Going to spawn")
@@ -125,41 +131,35 @@ def do_spawn_and_publish(opts, events, spawn_playbook, group):
         return
 
     spawn_result["group"] = group
+    spawn_result["topic"] = EventTopics.VM_SPAWNED
     try:
         rc = get_redis_connection(opts)
-        rc.publish(PUBSUB_SPAWNER, json.dumps(spawn_result))
+        rc.publish(PUBSUB_MB, json.dumps(spawn_result))
     except Exception as err:
         log_fn("Failed to publish msg about new VM: {} with error: {}"
                .format(spawn_result, err))
 
 
-class Spawner(object):
-
-    def __init__(self, opts, events):
-        """
-        :param opts: Global backend configuration
-        :type opts: Bunch
-        """
-        self.opts = weakref.proxy(opts)
-        self.events = events
-
-        self.child_processes = []
-
-    def log(self, msg):
-        self.events.put({"when": time.time(), "who": "spawner", "what": msg})
+class Spawner(Executor):
+    __name_for_log__ = "spawner"
 
     def start_spawn(self, group):
         self.recycle()
+        spawn_playbook = None
         try:
             spawn_playbook = self.opts.build_groups[group]["spawn_playbook"]
             os.path.exists(spawn_playbook)
         except KeyError:
-            msg = "Config missing playbook for group: {}".format(group)
+            msg = "Config missing spawn playbook for group: {}".format(group)
             self.log(msg)
             raise CoprWorkerSpawnFailError(msg)
         except OSError:
-            msg = "Playbook {} is missing".format(spawn_playbook)
+            msg = "Spawn playbook {} is missing".format(spawn_playbook)
             self.log(msg)
+            raise CoprWorkerSpawnFailError(msg)
+
+        if spawn_playbook is None:
+            msg = "Missing spawn playbook for group: {} for unknown reason".format(group)
             raise CoprWorkerSpawnFailError(msg)
 
         proc = Process(target=do_spawn_and_publish,
@@ -167,24 +167,3 @@ class Spawner(object):
         self.child_processes.append(proc)
         proc.start()
         self.log("Spawn process started: {}".format(proc.pid))
-
-    def terminate(self):
-        for proc in self.child_processes:
-            proc.terminate()
-
-    def recycle(self):
-        """
-        Cleanup unused process, should be invoked periodically
-        """
-        still_alive = []
-        for proc in self.child_processes:
-            if proc.is_alive():
-                still_alive.append(proc)
-            else:
-                self.log("Spawn process finished: {}".format(proc.pid))
-        self.child_processes = still_alive
-
-    def still_working(self):
-        self.recycle()
-        return len(self.child_processes) > 0
-

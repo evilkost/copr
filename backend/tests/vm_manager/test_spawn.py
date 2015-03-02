@@ -110,20 +110,20 @@ class TestSpawner(object):
         assert len(logged) == 1
         assert logged[0]["what"] == "foobar"
 
-    def test_do_spawn_and_publish(self, mc_spawn_instance):
-        mc_spawn_instance.return_value = {"vm_name": self.vm_name, "ip": self.vm_ip}
-
-        # ps = self.rc.pubsub(ignore_subscribe_messages=True)
-        ps = self.rc.pubsub(ignore_subscribe_messages=True)
-        ps.subscribe(PUBSUB_SPAWNER)
-        time.sleep(0.1)
-        ps.get_message()  # ignoring
-
-        do_spawn_and_publish(self.opts, self.queue, "/spawn.yml", group=0)
-        msg = ps.get_message()
-        assert json.loads(msg["data"]) == mc_spawn_instance.return_value
-
-        logged = self._get_all_from_queue()
+    # def test_do_spawn_and_publish(self, mc_spawn_instance):
+    #     mc_spawn_instance.return_value = {"vm_name": self.vm_name, "ip": self.vm_ip}
+    #
+    #     # ps = self.rc.pubsub(ignore_subscribe_messages=True)
+    #     ps = self.rc.pubsub(ignore_subscribe_messages=True)
+    #     ps.subscribe(PUBSUB_SPAWNER)
+    #     time.sleep(0.1)
+    #     ps.get_message()  # ignoring
+    #
+    #     do_spawn_and_publish(self.opts, self.queue, "/spawn.yml", group=0)
+    #     msg = ps.get_message()
+    #     assert json.loads(msg["data"]) == mc_spawn_instance.return_value
+    #
+    #     logged = self._get_all_from_queue()
 
     def test_start_spawn(self, mc_spawn_instance):
         mc_spawn_instance.return_value = {"vm_name": self.vm_name, "ip": self.vm_ip}

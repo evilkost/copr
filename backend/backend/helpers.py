@@ -9,6 +9,7 @@ import ConfigParser
 import os
 import sys
 import datetime
+import traceback
 
 from bunch import Bunch
 from redis import StrictRedis
@@ -246,4 +247,10 @@ def get_redis_connection(opts):
     if hasattr(opts, "redis_db"):
         kwargs["db"] = opts.redis_db
     return StrictRedis(**kwargs)
+
+
+def format_tb(ex, ex_traceback):
+    tb_lines = traceback.format_exception(ex.__class__, ex, ex_traceback)
+    return ''.join(tb_lines)
+
 

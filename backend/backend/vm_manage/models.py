@@ -11,6 +11,8 @@ class VmDescriptor(object):
         self.state = state
         self.group = group
 
+        self.check_fails = 0
+
         # self.last_health_check = None
         # self.last_release = None
         # self.in_use_since = None
@@ -57,3 +59,9 @@ class VmDescriptor(object):
         value = rc.hget(KEY_VM_INSTANCE.format(vm_name=self.vm_name), field)
         setattr(self, field, value)
         return value
+
+    def record_failure(self, rc):
+        """
+        :type rc: StrictRedis
+        """
+        rc.hincrby(KEY_VM_INSTANCE.format(vm_name=self.vm_name), "check_fails")

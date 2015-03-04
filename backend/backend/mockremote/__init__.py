@@ -150,6 +150,7 @@ class MockRemote(object):
         self.failed = []
         self.finished = []
 
+        ...  sub scribe to event ...
         # self.callback.log("MockRemote: {}".format(self.__dict__))
 
     def check(self):

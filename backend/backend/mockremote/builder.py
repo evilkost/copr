@@ -39,6 +39,8 @@ class Builder(object):
         self.conn = self._create_ans_conn()
         self.root_conn = self._create_ans_conn(username="root")
 
+        self.halt_build = False
+
         # self.callback.log("Created builder: {}".format(self.__dict__))
 
         # Before use: check out the host - make sure it can build/be contacted/etc
@@ -282,7 +284,7 @@ class Builder(object):
         _, poller = self.conn.run_async(self.timeout)
         waited = 0
         results = None
-        while True:
+        while not self.halt_build:
             # TODO: try replace with ``while waited < self.timeout``
             # extract method and return waited time, raise timeout error in `else`
             results = poller.poll()

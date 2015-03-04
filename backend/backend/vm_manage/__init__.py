@@ -49,6 +49,7 @@ class Thresholds(object):
     Time constants for VM manager, all values are int and represents seconds
     """
     terminating_timeout = 600
+    dirty_vm_terminating_timeout = 60
     health_check_period = 15
     keep_vm_for_user_timeout = 600
     vm_spawn_min_interval = 20

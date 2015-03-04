@@ -25,7 +25,7 @@ from ..job import BuildJob
 from ..mockremote import MockRemote
 from ..frontend import FrontendClient
 from ..constants import BuildStatus
-from ..helpers import register_build_result
+from ..helpers import register_build_result, format_tb
 
 
 ansible_playbook = "ansible-playbook"
@@ -117,6 +117,8 @@ class Worker(multiprocessing.Process):
         self.vm_name = None
         self.vm_ip = None
         self.callback.log("creating worker: dynamic ip")
+
+        self.vmm = VmManager(self.opts, self.events)
 
     @property
     def group_name(self):
@@ -543,6 +545,7 @@ class Worker(multiprocessing.Process):
         :param job: :py:class:`~backend.job.BuildJob`
         """
         self._announce_start(job)
+        self.update_process_title(suffix="Task: {} chroot: {} build started".format(job.build_id, job.chroot))
         status = BuildStatus.SUCCEEDED
         chroot_destdir = os.path.normpath(job.destdir + '/' + job.chroot)
 
@@ -644,42 +647,82 @@ class Worker(multiprocessing.Process):
 
         setproctitle(title)
 
-    # def run(self):
-    #
-    #
-    #     while not self.kill_received:
-    #         pass
-
     def run(self):
-        """
-        Worker should startup and check if it can function
-        for each job it takes from the jobs queue
-        run opts.setup_playbook to create the instance
-        do the build (mockremote)
-        terminate the instance.
-
-        """
         self.init_fedmsg()
-
+        self.vmm.post_init()
+        self.update_process_title(suffix="trying to acquire job")
         while not self.kill_received:
-            self.update_process_title()
-            self.check_vm_still_alive()
+            self.update_process_title(suffix="trying to acquire job")
 
-            if self.opts.spawn_in_advance and not self.vm_ip:
-                self.spawn_instance_with_check()
-
+            self.callback.log("Trying to obtain a job ")
             job = self.obtain_job()
             if not job:
                 time.sleep(self.opts.sleeptime)
                 continue
 
-            if not self.vm_ip:
-                self.spawn_instance_with_check()
+            start_vm_wait_time = time.time()
+            self.update_process_title(suffix="trying to acquire VM for job")
+            vmd = None
+            while vmd is None:
+                try:
+                    self.callback.log("Trying to acquire a VM for job: {}".format(str(job)))
+                    # from celery.contrib import rdb; rdb.set_trace()
+                    vmd = self.vmm.acquire_vm(self.group_id, job.project_owner, os.getpid())
+                except Exception as err:
+                    # TODO: add specific expections
+                    _, _, ex_tb = sys.exc_info()
+                    self.callback.log("Failed to acquire a VM :{}, {}".format(error, format_tb(error, ex_tb)))
+                    self.update_process_title(suffix="trying to acquire VM for job for {}s"
+                                              .format(time.time() - start_vm_wait_time))
+                    time.sleep(self.opts.sleeptime)
+                    continue
 
             try:
+                # got vmd
+                # TODO: store self.vmd = vmd and use it
+                self.vm_name = vmd.vm_name
+                self.vm_ip = vmd.vm_ip
+
                 self.do_job(job)
             except Exception as error:
-                self.callback.log("Unhandled build error: {}".format(error))
+                _, _, ex_tb = sys.exc_info()
+                self.callback.log("Unhandled build error: {}, {}".format(error, format_tb(error, ex_tb)))
             finally:
                 # clean up the instance
-                self.terminate_instance()
+                self.vmm.release_vm(vmd.vm_name)
+
+    # def run_old(self):
+    #     """
+    #     Worker should startup and check if it can function
+    #     for each job it takes from the jobs queue
+    #     run opts.setup_playbook to create the instance
+    #     do the build (mockremote)
+    #     terminate the instance.
+    #
+    #     """
+    #     self.init_fedmsg()
+    #
+    #     while not self.kill_received:
+    #         self.update_process_title()
+    #         self.check_vm_still_alive()
+    #
+    #         if self.opts.spawn_in_advance and not self.vm_ip:
+    #             self.spawn_instance_with_check()
+    #
+    #         job = self.obtain_job()
+    #         if not job:
+    #             time.sleep(self.opts.sleeptime)
+    #             continue
+    #
+    #         if not self.vm_ip:
+    #             self.spawn_instance_with_check()
+    #
+    #         try:
+    #             self.do_job(job)
+    #         except Exception as error:
+    #             _, _, ex_tb = sys.exc_info()
+    #             self.callback.log("Unhandled build error: {}, {}".format(error, format_tb(error, ex_tb)))
+    #         finally:
+    #             # TODO: if build has status RUNNING make build pending again
+    #             # clean up the instance
+    #             self.terminate_instance()

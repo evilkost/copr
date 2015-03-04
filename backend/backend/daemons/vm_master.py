@@ -4,96 +4,25 @@ from __future__ import print_function
 from __future__ import unicode_literals
 from __future__ import division
 from __future__ import absolute_import
-from collections import defaultdict
-import json
 
 from multiprocessing import Process
 import time
 from setproctitle import setproctitle
 import traceback
-import weakref
-
-from requests import get, RequestException
-from retask.task import Task
-from retask.queue import Queue
 import sys
+import psutil
 
-from ..actions import Action
-from backend.helpers import get_redis_connection, format_tb
-from backend.vm_manage import VmStates, Thresholds, KEY_VM_POOL, KEY_VM_POOL_INFO, PUBSUB_MB, EventTopics
+from backend.constants import DEF_BUILD_TIMEOUT
+from backend.helpers import format_tb
+from backend.vm_manage import VmStates, Thresholds, KEY_VM_POOL_INFO
 from backend.vm_manage.event_handle import EventHandler
-from backend.vm_manage.manager import VmManager
-from ..exceptions import CoprJobGrabError
-from ..frontend import FrontendClient
-
-from ..vm_manage.spawn import Spawner
-from ..vm_manage.terminate import Terminator
-from ..vm_manage.check import HealthChecker
-
-#
-# class EventCallback(object):
-#     """
-#     :param events: :py:class:`multiprocessing.Queue` to listen
-#         for events from other backend components
-#     """
-#     def __init__(self, events):
-#         self.events = events
-#
-#     def log(self, msg):
-#         self.events.put({"when": time.time(), "who": "vm_master", "what": msg})
-
-#
-# handlers_map = {
-#     EventTopics.HEALTH_CHECK: on_health_check_result,
-#     EventTopics.VM_SPAWNED: on_vm_spawned,
-#     EventTopics.VM_TERMINATION_REQUEST: on_vm_termination_request,
-#     EventTopics.VM_TERMINATED: on_vm_termination_result,
-# }
-#
-#
-# def pubsub_handler(vmm):
-#     """
-#     Listens redis pubsub and perform requested actions.
-#     Message payload is packed in json, it should be a dictionary
-#         at the root level with reserved field `topic` which is required
-#         for message routing
-#     :type vmm: VmManager
-#     """
-#     setproctitle("pubsub handler")
-#     channel = vmm.rc.pubsub(ignore_subscribe_messages=True)
-#     channel.subscribe(PUBSUB_MB)
-#     # TODO: check subscribe success
-#     vmm.log("Spawned pubsub handler", who="pubsub handler")
-#     for raw in channel.listen():
-#         if raw is None:
-#             continue
-#         else:
-#             if raw["type"] != "message":
-#                 continue
-#             try:
-#                 msg = json.loads(raw["data"])
-#
-#                 if "topic" not in msg:
-#                     raise Exception("Handler received msg without `topic` field, msg: {}".format(msg))
-#                 topic = msg["topic"]
-#                 if topic not in handlers_map:
-#                     raise Exception("Handler received msg with unknown `topic` field, msg: {}".format(msg))
-#
-#                 handlers_map[topic](vmm, msg)
-#
-#             except Exception as err:
-#                 _, _, ex_tb = sys.exc_info()
-#                 vmm.log("Handler error: raw msg: {},  {} {}"
-#                         .format(raw, err, format_tb(err, ex_tb)), who="event handler")
 
 
 class VmMaster(Process):
     """
     Spawns and terminate VM for builder process. Mainly wrapper for ..vm_manage package.
 
-    :param Bunch opts: backend config
-    :param events: :py:class:`multiprocessing.Queue` to listen
-        for events from other backend components
+    :type vm_manager: backend.vm_manage.manager.VmManager
     """
     def __init__(self, vm_manager):
         super(VmMaster, self).__init__(name="vm_master")
@@ -109,7 +38,30 @@ class VmMaster(Process):
     def remove_old_dirty_vms(self):
         # terminate vms bound_to user and time.time() - vm.last_release_time > threshold_keep_vm_for_user_timeout
         #  or add field to VMD ot override common threshold
-        pass
+        ready_vmd_list = self.vmm.get_vm_by_group_and_state_list(None, [VmStates.READY])
+        for vmd in ready_vmd_list:
+            if vmd.get_field(self.vmm.rc, "bound_to_user") is not None:
+                last_release = vmd.get_field(self.vmm.rc, "last_release")
+                if last_release is None:
+                    continue
+                not_re_acquired_in = time.time() - float(last_release)
+                if not_re_acquired_in > Thresholds.dirty_vm_terminating_timeout:
+                    self.log("dirty VM `{}` not re-acquired in {}, terminating it"
+                             .format(vmd.vm_name, not_re_acquired_in))
+                    self.vmm.terminate_vm(vmd.vm_name, allowed_pre_state=VmStates.READY)
+
+    def remove_vm_with_dead_builder(self):
+        # check that process who acquired VMD stil exists, othrewise release VM
+        in_use_vmd_list = self.vmm.get_vm_by_group_and_state_list(None, [VmStates.IN_USE])
+        self.log("VM in use: {}".format(map(lambda x: (x.vm_name, x.state), in_use_vmd_list)))
+        for vmd in in_use_vmd_list:
+            pid = vmd.get_field(self.vmm.rc, "used_by_pid")
+            if pid is None:
+                continue
+            else:
+                if not psutil.pid_exists(int(pid)):
+                    self.log("Process `{}` not exists anymore, releasing VM: {} ".format(pid, str(vmd)))
+                    self.vmm.release_vm(vmd.vm_name)
 
     def check_vms_health(self):
         # for machines in state ready and time.time() - vm.last_health_check > threshold_health_check_period
@@ -133,12 +85,12 @@ class VmMaster(Process):
             active_vmd_list = self.vmm.get_vm_by_group_and_state_list(
                 group, [VmStates.GOT_IP, VmStates.READY, VmStates.IN_USE])
 
-            self.log("active VM#: {}".format(map(lambda x: (x.vm_name, x.state), active_vmd_list)))
+            # self.log("active VM#: {}".format(map(lambda x: (x.vm_name, x.state), active_vmd_list)))
 
             if len(active_vmd_list) + self.vmm.spawner.children_number >= max_vm_total:
-                self.log("active VM#: {}, spawn processes #: {}"
-                         .format(map(lambda x: (x.vm_name, x.state), active_vmd_list),
-                                 self.vmm.spawner.children_number))
+                # self.log("active VM#: {}, spawn processes #: {}"
+                #          .format(map(lambda x: (x.vm_name, x.state), active_vmd_list),
+                #                  self.vmm.spawner.children_number))
                 continue
             last_vm_spawn_start = self.vmm.rc.hget(KEY_VM_POOL_INFO.format(group=group), "last_vm_spawn_start")
             if last_vm_spawn_start:
@@ -163,6 +115,10 @@ class VmMaster(Process):
                 self.log("Error during spawn attempt: {} {}".format(err, format_tb(err, ex_tb)))
 
     def terminate_abandoned_vms(self):
+        max_time = time.time() + DEF_BUILD_TIMEOUT * 2
+        #for group in range(self.opts.build_groups_count):
+        is_use_vmd_list = self.vmm.get_vm_by_group_and_state_list(None, [VmStates.IN_USE])
+
         # If builder process forget about vm clean up, we should terminate it (more safe than marking it ready)
         # check by `in_use_since` > threshold_max_in_use_time, or add field to VMD which overrides this timeout
         # Also run terminate again for VM in `terminating` state with
@@ -177,6 +133,7 @@ class VmMaster(Process):
         self.remove_old_dirty_vms()
         self.check_vms_health()
         self.start_spawn_if_required()
+        self.remove_vm_with_dead_builder()
 
         self.vmm.checker.recycle()
         self.vmm.spawner.recycle()

@@ -210,7 +210,7 @@ class CoprBackend(object):
             # re-read config into opts
             self.update_conf()
 
-            for group in []: #self.opts.build_groups:
+            for group in self.opts.build_groups:
                 group_id = group["id"]
                 self.event("# jobs in {0} queue: {1}"
                            .format(group["name"], self.task_queues[group_id].length))
@@ -247,8 +247,8 @@ def run_backend(opts):
     try:
         context = DaemonContext(
             pidfile=lockfile.FileLock(opts.pidfile),
-            # gid=grp.getgrnam("copr").gr_gid,
-            # uid=pwd.getpwnam("copr").pw_uid,
+            gid=grp.getgrnam("copr").gr_gid,
+            uid=pwd.getpwnam("copr").pw_uid,
             detach_process=opts.daemonize,
             umask=0o22,
             stderr=sys.stderr,

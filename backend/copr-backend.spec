@@ -46,6 +46,7 @@ BuildRequires: python-six
 BuildRequires: ansible >= 1.2
 BuildRequires: python-IPy
 BuildRequires: python-paramiko
+BuildRequires: python-psutil
 BuildRequires: wget
 
 Requires:   obs-signd
@@ -66,6 +67,7 @@ Requires:   python-retask
 Requires:   python-copr
 Requires:   python-six
 Requires:   python-IPy
+Requires:   python-psutil
 Requires:   redis
 Requires:   logrotate
 Requires:   fedmsg

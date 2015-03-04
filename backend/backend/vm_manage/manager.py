@@ -8,7 +8,7 @@ import weakref
 
 from backend.helpers import get_redis_connection
 from .models import VmDescriptor
-from . import VmStates, KEY_VM_INSTANCE, KEY_VM_POOL, KEY_VM_GROUPS, EventTopics, PUBSUB_MB
+from . import VmStates, KEY_VM_INSTANCE, KEY_VM_POOL, EventTopics, PUBSUB_MB
 
 # KEYS [1]: VMD key
 # ARGS: None
@@ -22,20 +22,23 @@ else
 end
 """
 
-# KEYS [1]: VMD key
-# ARGS [1]: user to bound; [2] current timestamp for `in_use_since`
+# KEYS[1]: VMD key
+# ARGV[1]: user to bound;
+# ARGV[2]: pid of the builder process
+# ARGV[3]: current timestamp for `in_use_since`
 acquire_vm_lua = """
 local old_state = redis.call("HGET", KEYS[1], "state")
 if old_state ~= "ready"  then
     return nil
 else
-    redis.call("HMSET", KEYS[1], "state", "in_use", "bound_to_user", ARGV[1], "in_use_since", ARGV[2])
+    redis.call("HMSET", KEYS[1], "state", "in_use", "bound_to_user", ARGV[1],
+               "used_by_pid", ARGV[2], "in_use_since", ARGV[3])
     return "OK"
 end
 """
 
-# KEYS [1]: VMD key
-# ARGS [1] current timestamp for `last_release`
+# KEYS[1]: VMD key
+# ARGV[1] current timestamp for `last_release`
 release_vm_lua = """
 local old_state = redis.call("HGET", KEYS[1], "state")
 if old_state ~= "in_use" then
@@ -43,18 +46,25 @@ if old_state ~= "in_use" then
 else
     redis.call("HMSET", KEYS[1], "state", "ready", "last_release", ARGV[1])
     redis.call("HDEL", KEYS[1], "in_use_since")
+    redis.call("HDEL", KEYS[1], "used_by_pid")
     return "OK"
 end
 """
 
 # KEYS [1]: VMD key
-# ARGS [1] timestamp for `terminating_since`
+# ARGS [1]: allowed_pre_state
+# ARGS [2]: timestamp for `terminating_since`
 terminate_vm_lua = """
 local old_state = redis.call("HGET", KEYS[1], "state")
+redis.log(redis.LOG_DEBUG, "old state " .. old_state )
+redis.log(redis.LOG_DEBUG, "allowed_pre_state " .. ARGV[1] )
+
 if old_state == "terminating" then
-    return nil
+    return "Already terminating"
+elseif ARGV[1] and ARGV[1] ~= "None" and old_state ~= ARGV[1] then
+    return "Old state != `allowed_pre_state`"
 else
-    redis.call("HMSET", KEYS[1], "state", "terminating", "terminating_since", ARGV[1])
+    redis.call("HMSET", KEYS[1], "state", "terminating", "terminating_since", ARGV[2])
     return "OK"
 end
 """
@@ -100,7 +110,8 @@ class VmManager(object):
 
     @property
     def vm_groups(self):
-        return self.rc.smembers(KEY_VM_GROUPS)
+        # return self.rc.smembers(KEY_VM_GROUPS)
+        return range(self.opts.build_groups_count)
 
     def add_vm_to_pool(self, vm_ip, vm_name, group):
         # print("\n ADD VM TO POOL")
@@ -110,7 +121,6 @@ class VmManager(object):
         vmd = VmDescriptor(vm_ip, vm_name, group, VmStates.GOT_IP)
         # print("VMD: {}".format(vmd))
         pipe = self.rc.pipeline()
-        pipe.sadd(KEY_VM_GROUPS, group)
         pipe.sadd(KEY_VM_POOL.format(group=group), vm_name)
         pipe.hmset(KEY_VM_INSTANCE.format(vm_name=vm_name), vmd.to_dict())
         pipe.execute()
@@ -139,7 +149,14 @@ class VmManager(object):
             self.log("failed to start vm check, wrong state")
             return False
 
-    def acquire_vm(self, group, username):
+    def acquire_vm(self, group, username, pid):
+        """
+        Try to acquire VM from pool
+        :param group: builder group id, as defined in config
+        :type group: int
+        :param username: build owner username, VMM prefer to reuse an existing VM which was use by the same user
+        :param pid: builder pid to release VM after build process unhandled death
+        """
         # TODO: reject request if user acquired #machines > threshold_vm_per_user
         vmd_list = self.get_all_vm_in_group(group)
         ready_vmd_list = [vmd for vmd in vmd_list if vmd.state == VmStates.READY]
@@ -150,7 +167,7 @@ class VmManager(object):
 
         for vmd in all_vms:
             vm_key = KEY_VM_INSTANCE.format(vm_name=vmd.vm_name)
-            if self.lua_scripts["acquire_vm"](keys=[vm_key], args=[username, time.time()]) == "OK":
+            if self.lua_scripts["acquire_vm"](keys=[vm_key], args=[username, pid, time.time()]) == "OK":
                 return vmd
         else:
             raise Exception("No VM are available, please wait in queue")
@@ -161,13 +178,17 @@ class VmManager(object):
         if not self.lua_scripts["release_vm"](keys=[vm_key], args=[time.time()]):
             raise Exception("VM not in in_use state")
 
-    def terminate_vm(self, vm_name):
+    def terminate_vm(self, vm_name, allowed_pre_state=None):
         """
         Initiate VM termination process
+
+        :param allowed_pre_state: When defined force check that old state is among allowed ones.
+        :type allowed_pre_state: str constant from VmState
         """
         vmd = self.get_vm_by_name(vm_name)
         vm_key = KEY_VM_INSTANCE.format(vm_name=vm_name)
-        if self.lua_scripts["terminate_vm"](keys=[vm_key], args=[time.time()]) == "OK":
+        lua_result = self.lua_scripts["terminate_vm"](keys=[vm_key], args=[allowed_pre_state, time.time()])
+        if lua_result == "OK":
             msg = {
                 "group": vmd.group,
                 "vm_ip": vmd.vm_ip,
@@ -175,10 +196,10 @@ class VmManager(object):
                 "topic": EventTopics.VM_TERMINATION_REQUEST
             }
             self.rc.publish(PUBSUB_MB, json.dumps(msg))
-            self.log("VM {} queued for termination".format(vmd))
+            self.log("VM {} queued for termination".format(vmd.vm_name))
             # TODO: Inform builder process if vmd has field `builder_pid` (or should it listen PUBSUB_TERMINATION ? )
         else:
-            self.log("VM `{}` is already in terminating state, skipping ".format(vm_name))
+            self.log("VM  termination `{}` skipped due to: {} ".format(vm_name, lua_result))
 
     def remove_vm_from_pool(self, vm_name):
         """
@@ -197,6 +218,12 @@ class VmManager(object):
         vm_name_list = self.rc.smembers(KEY_VM_POOL.format(group=group))
         return [VmDescriptor.load(self.rc, vm_name) for vm_name in vm_name_list]
 
+    def get_all_vm(self):
+        vm_name_list = []
+        for group in self.vm_groups:
+            vm_name_list.extend(self.rc.smembers(KEY_VM_POOL.format(group=group)))
+        return [VmDescriptor.load(self.rc, vm_name) for vm_name in vm_name_list]
+
     def get_vm_by_name(self, vm_name):
         """
         :rtype: VmDescriptor
@@ -205,8 +232,11 @@ class VmManager(object):
 
     def get_vm_by_group_and_state_list(self, group, state_list):
         states = set(state_list)
-        vmd_list = self.get_all_vm_in_group(group)
-        return [vmd for vmd in vmd_list
-                if int(vmd.group) == int(group) and vmd.state in states]
+        if group is None:
+            vmd_list = self.get_all_vm()
+        else:
+            vmd_list = self.get_all_vm_in_group(group)
+        return [vmd for vmd in vmd_list if vmd.state in states]
+
 
 

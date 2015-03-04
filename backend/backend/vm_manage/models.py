@@ -19,6 +19,7 @@ class VmDescriptor(object):
         # self.terminating_since = None
         #
         self.bound_to_user = None
+        # self.used_by_pid = None
 
     def __str__(self):
         return pformat(self.__dict__)

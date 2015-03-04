@@ -25,6 +25,8 @@ class EventTopics(object):
 #PUBSUB_TERMINATED = "copr:backend:terminated:pubsub::"
 # PUBSUB_SPAWNER = "copr:backend:spawner:pubsub::"
 
+# argument - vm_ip
+PUBSUB_INTERRUPT_BUILDER = "copr:backend:interrupt_build:pubsub::{}"
 
 PUBSUB_VM_TERMINATION = "copr:backend:vm_termination:pubsub::{vm_name}"
 # message should contain string "terminating"

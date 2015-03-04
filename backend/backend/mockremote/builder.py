@@ -6,8 +6,10 @@ import time
 from urlparse import urlparse
 
 from ansible.runner import Runner
+from backend.vm_manage import PUBSUB_INTERRUPT_BUILDER
+from ..helpers import get_redis_connection
 
-from ..exceptions import BuilderError, BuilderTimeOutError, AnsibleCallError, AnsibleResponseError
+from ..exceptions import BuilderError, BuilderTimeOutError, AnsibleCallError, AnsibleResponseError, VmError
 
 from ..constants import mockchain, rsync
 
@@ -38,8 +40,6 @@ class Builder(object):
         # if we're at this point we've connected and done stuff on the host
         self.conn = self._create_ans_conn()
         self.root_conn = self._create_ans_conn(username="root")
-
-        self.halt_build = False
 
         # self.callback.log("Created builder: {}".format(self.__dict__))
 
@@ -277,14 +277,17 @@ class Builder(object):
         buildcmd += dest
         return buildcmd
 
-    def run_command_and_wait(self, buildcmd):
+    def run_build_and_wait(self, buildcmd):
         self.callback.log("executing: {0}".format(buildcmd))
         self.conn.module_name = "shell"
         self.conn.module_args = buildcmd
         _, poller = self.conn.run_async(self.timeout)
         waited = 0
         results = None
-        while not self.halt_build:
+
+        self.setup_pubsub_handler()
+        while True:
+            self.check_pubsub()
             # TODO: try replace with ``while waited < self.timeout``
             # extract method and return waited time, raise timeout error in `else`
             results = poller.poll()
@@ -301,6 +304,23 @@ class Builder(object):
             time.sleep(10)
             waited += 10
         return results
+
+    def setup_pubsub_handler(self):
+        self.rc = get_redis_connection(self.opts)
+        self.ps = self.rc.pubsub(ignore_subscribe_messages=True)
+        channel_name = PUBSUB_INTERRUPT_BUILDER.format(self.hostname)
+        self.ps.subscribe(channel_name)
+        while self.ps.get_message() is not None:
+            self.ps.get_message()
+
+        self.callback.log("Subscribed to {}".format(channel_name))
+
+    def check_pubsub(self):
+        self.callback.log("Checking pubsub channel")
+        msg = self.ps.get_message()
+        if msg is not None:
+            if msg["type"] == "message":
+                raise VmError("Build interrupted by msg: {}".format(msg["data"]))
 
     def build(self, pkg):
         # build the pkg passed in
@@ -320,7 +340,7 @@ class Builder(object):
         buildcmd = self.gen_mockchain_command(dest)
 
         # run the mockchain command async
-        ansible_build_results = self.run_command_and_wait(buildcmd)  # now raises BuildTimeoutError
+        ansible_build_results = self.run_build_and_wait(buildcmd)  # now raises BuildTimeoutError
         check_for_ans_error(ansible_build_results, self.hostname)  # on error raises AnsibleResponseError
 
         # we know the command ended successfully but not if the pkg built

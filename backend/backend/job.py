@@ -42,6 +42,8 @@ class BuildJob(object):
 
         self.buildroot_pkgs = None
 
+        self.task_id = None
+
         # TODO: validate update data
         for key, val in task_data.items():
             key = str(key)

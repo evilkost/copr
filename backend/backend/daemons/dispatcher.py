@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import time
@@ -9,12 +10,12 @@ from retask.queue import Queue
 
 from ..vm_manage.manager import VmManager
 from ..mockremote.callback import CliLogCallBack
-from ..exceptions import MockRemoteError, CoprWorkerError
+from ..exceptions import MockRemoteError, CoprWorkerError, VmError
 from ..job import BuildJob
 from ..mockremote import MockRemote
 from ..frontend import FrontendClient
-from ..constants import BuildStatus
-from ..helpers import register_build_result, format_tb
+from ..constants import BuildStatus, JOB_GRAB_REMOVE_PUBSUB
+from ..helpers import register_build_result, format_tb, get_redis_connection
 
 
 ansible_playbook = "ansible-playbook"
@@ -190,7 +191,24 @@ class Worker(multiprocessing.Process):
         Send data about started build to the frontend
         """
 
-        job.status = 3  # running
+        job.status = BuildStatus.RUNNING
+        build = job.to_dict()
+        self.callback.log("build: {}".format(build))
+
+        data = {"builds": [build]}
+        try:
+            self.frontend_callback.update(data)
+        except:
+            raise CoprWorkerError(
+                "Could not communicate to front end to submit status info")
+
+    def mark_pending(self, job):
+        """
+        Re-schedule job
+        :param job:
+        :return:
+        """
+        job.status = BuildStatus.PENDING
         build = job.to_dict()
         self.callback.log("build: {}".format(build))
 
@@ -274,6 +292,7 @@ class Worker(multiprocessing.Process):
         self.callback.log(
             "Skipping: package {0} has been already built before.".format(job.pkg))
         job.status = BuildStatus.SKIPPED  # skipped
+        self.notify_job_grab_about_task_end(job)
         self._announce_end(job)
 
     def obtain_job(self):
@@ -410,33 +429,38 @@ class Worker(multiprocessing.Process):
 
         setproctitle(title)
 
+    def notify_job_grab_about_task_end(self, job):
+        self.rc.publish(JOB_GRAB_REMOVE_PUBSUB, job.task_id)
+
+
     def run(self):
         self.init_fedmsg()
         self.vmm.post_init()
+
+        self.rc = get_redis_connection(self.opts)
         self.update_process_title(suffix="trying to acquire job")
         while not self.kill_received:
             self.update_process_title(suffix="trying to acquire job")
 
-            self.callback.log("Trying to obtain a job ")
+            # self.callback.log("Trying to obtain a job ")
             job = self.obtain_job()
             if not job:
                 time.sleep(self.opts.sleeptime)
                 continue
 
             start_vm_wait_time = time.time()
-            self.update_process_title(suffix="trying to acquire VM for job")
             vmd = None
             while vmd is None:
                 try:
-                    self.callback.log("Trying to acquire a VM for job: {}".format(str(job)))
+                    self.update_process_title(suffix="trying to acquire VM for job {} for {}s"
+                                              .format(job.task_id, time.time() - start_vm_wait_time))
+                    # self.callback.log("Trying to acquire a VM for job: {}".format(str(job)))
                     # from celery.contrib import rdb; rdb.set_trace()
                     vmd = self.vmm.acquire_vm(self.group_id, job.project_owner, os.getpid())
                 except Exception as err:
                     # TODO: add specific expections
                     _, _, ex_tb = sys.exc_info()
                     self.callback.log("Failed to acquire a VM :{}, {}".format(error, format_tb(error, ex_tb)))
-                    self.update_process_title(suffix="trying to acquire VM for job for {}s"
-                                              .format(time.time() - start_vm_wait_time))
                     time.sleep(self.opts.sleeptime)
                     continue
 
@@ -447,9 +471,14 @@ class Worker(multiprocessing.Process):
                 self.vm_ip = vmd.vm_ip
 
                 self.do_job(job)
+            except VmError as error:
+                _, _, ex_tb = sys.exc_info()
+                self.mark_pending(job)
+                self.callback.log("Builder VM error, re-scheduling task: {}, {}".format(error, format_tb(error, ex_tb)))
             except Exception as error:
                 _, _, ex_tb = sys.exc_info()
                 self.callback.log("Unhandled build error: {}, {}".format(error, format_tb(error, ex_tb)))
             finally:
                 # clean up the instance
+                self.notify_job_grab_about_task_end(job)
                 self.vmm.release_vm(vmd.vm_name)

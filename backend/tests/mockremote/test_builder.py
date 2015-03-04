@@ -671,7 +671,7 @@ class TestBuilder(object):
         mc_time.return_value = None
 
         with pytest.raises(BuilderTimeOutError) as error:
-            builder.run_command_and_wait(build_cmd)
+            builder.run_build_and_wait(build_cmd)
 
     @mock.patch("backend.mockremote.builder.time")
     def test_run_command_and_wait(self, mc_time):
@@ -696,7 +696,7 @@ class TestBuilder(object):
             self.stage += 1
 
         mc_time.sleep.side_effect = incr_stage
-        builder.run_command_and_wait(build_cmd)
+        builder.run_build_and_wait(build_cmd)
 
     @mock.patch("backend.mockremote.builder.Popen")
     def test_download(self, mc_popen):
@@ -774,14 +774,14 @@ class TestBuilder(object):
 
         builder.update_job_pkg_version = MagicMock()
 
-        builder.run_command_and_wait = MagicMock()
+        builder.run_build_and_wait = MagicMock()
         successful_wait_result = {
             "contacted": {self.BUILDER_HOSTNAME: {
                 "rc": 0, "stdout": self.STDOUT, "stderr": self.STDERR
             }},
             "dark": {}
         }
-        builder.run_command_and_wait.return_value = successful_wait_result
+        builder.run_build_and_wait.return_value = successful_wait_result
 
         builder.check_build_success = MagicMock()
         builder.check_build_success.return_value = (self.STDERR, False, self.STDOUT)
@@ -793,7 +793,7 @@ class TestBuilder(object):
 
         assert builder.modify_mock_chroot_config.called
         assert builder.check_if_pkg_local_or_http.called
-        assert builder.run_command_and_wait.called
+        assert builder.run_build_and_wait.called
         assert builder.check_build_success.called
         assert builder.collect_built_packages
 
@@ -801,7 +801,7 @@ class TestBuilder(object):
         builder.build(self.BUILDER_PKG)
 
         # test timeout handle
-        builder.run_command_and_wait.side_effect = BuilderTimeOutError("msg")
+        builder.run_build_and_wait.side_effect = BuilderTimeOutError("msg")
 
         with pytest.raises(BuilderError) as error:
             builder.build(self.BUILDER_PKG)
@@ -809,7 +809,7 @@ class TestBuilder(object):
         assert error.value.msg == "msg"
 
         # remove timeout
-        builder.run_command_and_wait.side_effect = None
+        builder.run_build_and_wait.side_effect = None
         builder.build(self.BUILDER_PKG)
 
         # error inside wait result
@@ -819,12 +819,12 @@ class TestBuilder(object):
             }},
             "dark": {}
         }
-        builder.run_command_and_wait.return_value = unsuccessful_wait_result
+        builder.run_build_and_wait.return_value = unsuccessful_wait_result
         with pytest.raises(BuilderError):
             builder.build(self.BUILDER_PKG)
 
         # make wait result successful again
-        builder.run_command_and_wait.return_value = successful_wait_result
+        builder.run_build_and_wait.return_value = successful_wait_result
         # # error during build check
         # builder.check_build_success.return_value = (self.STDERR, True, self.STDOUT)
         # assert not success

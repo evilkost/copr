@@ -4,17 +4,19 @@ from __future__ import print_function
 from __future__ import unicode_literals
 from __future__ import division
 from __future__ import absolute_import
-from collections import defaultdict
 
 from multiprocessing import Process
 import time
 from setproctitle import setproctitle
+import sys
 
 from requests import get, RequestException
 from retask.task import Task
 from retask.queue import Queue
 
 from ..actions import Action
+from ..constants import JOB_GRAB_REMOVE_PUBSUB
+from ..helpers import get_redis_connection, format_tb
 from ..exceptions import CoprJobGrabError
 from ..frontend import FrontendClient
 
@@ -48,6 +50,9 @@ class CoprJobGrab(Process):
         self.added_jobs = set()
         self.lock = lock
 
+        self.rc = None
+        self.rem_channel = None
+
     def connect_queues(self):
         """
         Connects to the retask queues. One queue per builders group.
@@ -58,6 +63,12 @@ class CoprJobGrab(Process):
 
             for arch in group["archs"]:
                 self.task_queues_by_arch[arch] = queue
+
+        self.rc = get_redis_connection(self.opts)
+        self.rem_channel = self.rc.pubsub(ignore_subscribe_messages=True)
+        self.rem_channel.subscribe(JOB_GRAB_REMOVE_PUBSUB)
+        while self.rem_channel.get_message() is not None:
+            pass
 
     def event(self, what):
         """
@@ -154,6 +165,28 @@ class CoprJobGrab(Process):
                     self.event("Error during processing action `{}`: {}"
                                .format(action, error))
 
+    def remove_jobs(self):
+        """
+        Listens for pubsub and remove jobs from self.added_jobs so we can re-add jobs failed due to VM error
+        """
+        self.event("Trying to rcv remove msg")
+        while True:
+            raw = self.rem_channel.get_message()
+            self.event("Recv rem msg: ".format(raw))
+            if raw is None:
+                break
+            if raw["type"] != "message":
+                continue
+            try:
+                msg = raw["data"]
+                if msg in self.added_jobs:
+                    self.added_jobs.remove(msg)
+                    self.event("Remove task from added_jobs".format(msg))
+            except Exception as err:
+                _, _, ex_tb = sys.exc_info()
+                self.event("Error receiving message from remove pubsub: raw msg: {}, error: {}, traceback:\n{}"
+                           .format(raw, err, format_tb(err, ex_tb)))
+
     def run(self):
         """
         Starts job grabber process
@@ -162,7 +195,15 @@ class CoprJobGrab(Process):
         self.connect_queues()
         try:
             while True:
-                self.load_tasks()
-                time.sleep(self.opts.sleeptime)
+                try:
+                    self.remove_jobs()
+                    self.load_tasks()
+
+                    self.event("Added jobs after remove and load: {}".format(self.added_jobs))
+                    time.sleep(self.opts.sleeptime)
+                except Exception as err:
+                    _, _, ex_tb = sys.exc_info()
+                    self.event("Job Grab unhandled exception".format(err, format_tb(err, ex_tb)))
+
         except KeyboardInterrupt:
             return

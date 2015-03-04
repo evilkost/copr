@@ -33,13 +33,14 @@ from __future__ import division
 from __future__ import absolute_import
 
 import fcntl
-import urllib
 import os
+
 from bunch import Bunch
 
 from ..constants import DEF_REMOTE_BASEDIR, DEF_BUILD_TIMEOUT, DEF_REPOS, \
     DEF_BUILD_USER, DEF_MACROS
 from ..exceptions import MockRemoteError, BuilderError
+
 
 
 # TODO: replace sign & createrepo with dependency injection
@@ -145,12 +146,13 @@ class MockRemote(object):
             callback=self.callback,
             remote_basedir=self.opts.remote_basedir,
             remote_tempdir=self.opts.remote_tempdir,
-            macros=self.macros, repos=self.repos)
+            macros=self.macros, repos=self.repos
+        )
 
         self.failed = []
         self.finished = []
 
-        ...  sub scribe to event ...
+
         # self.callback.log("MockRemote: {}".format(self.__dict__))
 
     def check(self):

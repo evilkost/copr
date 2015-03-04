@@ -7,6 +7,8 @@ class MockRemoteError(Exception):
         return self.msg
 
 
+
+
 class BuilderError(MockRemoteError):
     def __init__(self, msg, return_code=None, stdout=None, stderr=None):
         super(BuilderError, self).__init__(msg)
@@ -122,4 +124,8 @@ class CoprWorkerError(CoprBackendError):
 
 
 class CoprWorkerSpawnFailError(CoprWorkerError):
+    pass
+
+
+class VmError(CoprBackendError):
     pass

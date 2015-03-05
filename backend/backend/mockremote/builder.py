@@ -287,9 +287,8 @@ class Builder(object):
 
         self.setup_pubsub_handler()
         while True:
+            # TODO rework Builder and extrace check_pubsub, add method to interrupt build process from dispatcher
             self.check_pubsub()
-            # TODO: try replace with ``while waited < self.timeout``
-            # extract method and return waited time, raise timeout error in `else`
             results = poller.poll()
 
             if results["contacted"] or results["dark"]:
@@ -322,6 +321,24 @@ class Builder(object):
             if msg["type"] == "message":
                 raise VmError("Build interrupted by msg: {}".format(msg["data"]))
 
+    # def start_build(self, pkg):
+    #     # build the pkg passed in
+    #     # add pkg to various lists
+    #     # check for success/failure of build
+    #
+    #     # build_details = {}
+    #     self.modify_mock_chroot_config()
+    #
+    #     # check if pkg is local or http
+    #     dest = self.check_if_pkg_local_or_http(pkg)
+    #
+    #     # srpm version
+    #     self.update_job_pkg_version(pkg)
+    #
+    #     # construct the mockchain command
+    #     buildcmd = self.gen_mockchain_command(dest)
+    #
+
     def build(self, pkg):
         # build the pkg passed in
         # add pkg to various lists
@@ -341,7 +358,10 @@ class Builder(object):
 
         # run the mockchain command async
         ansible_build_results = self.run_build_and_wait(buildcmd)  # now raises BuildTimeoutError
+        # try:
         check_for_ans_error(ansible_build_results, self.hostname)  # on error raises AnsibleResponseError
+        # except AnsibleResponseError as err:
+        #     raise VmError(msg=err.msg)
 
         # we know the command ended successfully but not if the pkg built
         # successfully
@@ -433,9 +453,10 @@ def check_for_ans_error(results, hostname, err_codes=None, success_codes=None):
     if success_codes is None:
         success_codes = [0]
 
-    if "dark" in results and hostname in results["dark"]:
-        raise AnsibleResponseError(
-            msg="Error: Could not contact/connect to {}.".format(hostname))
+    if ("dark" in results and hostname in results["dark"]) or \
+            "contacted" not in results or hostname not in results["contacted"]:
+
+        raise VmError(msg="Error: Could not contact/connect to {}. raw results: {}".format(hostname, results))
 
     error = False
     err_results = {}

@@ -36,11 +36,11 @@ import fcntl
 import os
 
 from bunch import Bunch
+import time
 
 from ..constants import DEF_REMOTE_BASEDIR, DEF_BUILD_TIMEOUT, DEF_REPOS, \
     DEF_BUILD_USER, DEF_MACROS
 from ..exceptions import MockRemoteError, BuilderError
-
 
 
 # TODO: replace sign & createrepo with dependency injection
@@ -54,6 +54,29 @@ from .callback import DefaultCallBack
 def get_target_dir(chroot_dir, pkg_name):
     source_basename = os.path.basename(pkg_name).replace(".src.rpm", "")
     return os.path.normpath(os.path.join(chroot_dir, source_basename))
+
+
+class BuilderThread(object):
+    def __init__(self, builder_obj):
+        self.builder = builder_obj
+        self._running = False
+
+    def terminate(self):
+        self._running = False
+
+    def run(self):
+        self.builder.start_build()
+        self._running = True
+        state = None
+        while self._running:
+            state = self.builder.update_progress()
+            if state in ["done", "failed"]:
+                self._running = False
+            else:
+                time.sleep(5)
+
+        if state == "done":
+            self.builder.after_build()
 
 
 class MockRemote(object):
@@ -117,8 +140,6 @@ class MockRemote(object):
         )
         if opts:
             self.opts.update(opts)
-
-        self.max_retry_count = 2  # TODO: add config option
 
         self.job = job
         self.repos = repos or DEF_REPOS
@@ -281,16 +302,18 @@ class MockRemote(object):
         if self.opts.do_sign:
             self.sign_built_packages()
 
-        # self.built_packages.append(self.pkg)
-
         # createrepo with the new pkgs
         self.do_createrepo()
 
     def prepare_build_dir(self):
+        # TODO: remove old logs (build.log*, root.log*)
         p_path = self._get_pkg_destpath(self.pkg)
         # if it's marked as fail, nuke the failure and try to rebuild it
         if os.path.exists(os.path.join(p_path, "fail")):
             os.unlink(os.path.join(p_path, "fail"))
+
+        if os.path.exists(os.path.join(p_path, "success")):
+            os.unlink(os.path.join(p_path, "success"))
 
         # mkdir to download results
         if not os.path.exists(p_path):
@@ -298,6 +321,9 @@ class MockRemote(object):
 
         self.mark_dir_with_build_id()
 
+
+    # def start_build_thread(self):
+    #     pass
     def build_pkg_and_process_results(self):
         self.prepare_build_dir()
 
@@ -336,32 +362,6 @@ class MockRemote(object):
                                   .format(os.path.basename(self.pkg), build_error))
 
         self.on_success_build()
-        return build_details
-
-    def build_pkg(self):
-        """Build pkg defined in self.job
-
-
-        :return: build_details
-        """
-        # before mockremote was able to build more src pkgs at once
-        #  but now we expect only one src pkg at time
-
-        retry_count = self.max_retry_count
-        while retry_count > 0:
-            retry_count -= 1
-            try:
-                build_details = self.build_pkg_and_process_results()
-                break
-            except MockRemoteError as exception:
-                self.callback.error(exception.msg)
-
-        else:
-            # retry count reached 0 without successful results
-            msg = "Build pkg {} failed {} times".format(self.pkg, self.max_retry_count)
-            self.callback.log(msg)
-            raise MockRemoteError(msg)
-
         return build_details
 
     def mark_dir_with_build_id(self):

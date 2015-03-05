@@ -393,7 +393,7 @@ class Worker(multiprocessing.Process):
                 )
                 mr.check()
 
-                build_details = mr.build_pkg()
+                build_details = mr.build_pkg_and_process_results()
                 job.update(build_details)
 
                 if self.opts.do_sign:
@@ -401,6 +401,9 @@ class Worker(multiprocessing.Process):
 
                 register_build_result(self.opts)
 
+            #except VmError as e:
+            #    pass
+            # don't catch VmError
             except MockRemoteError as e:
                 # record and break
                 self.callback.log("{0} - {1}".format(self.vm_ip, e))
@@ -456,7 +459,8 @@ class Worker(multiprocessing.Process):
                                               .format(job.task_id, time.time() - start_vm_wait_time))
                     # self.callback.log("Trying to acquire a VM for job: {}".format(str(job)))
                     # from celery.contrib import rdb; rdb.set_trace()
-                    vmd = self.vmm.acquire_vm(self.group_id, job.project_owner, os.getpid())
+                    vmd = self.vmm.acquire_vm(self.group_id, job.project_owner, os.getpid(),
+                                              job.task_id, job.build_id, job.chroot)
                 except Exception as err:
                     # TODO: add specific expections
                     _, _, ex_tb = sys.exc_info()
@@ -474,7 +478,7 @@ class Worker(multiprocessing.Process):
             except VmError as error:
                 _, _, ex_tb = sys.exc_info()
                 self.mark_pending(job)
-                self.callback.log("Builder VM error, re-scheduling task: {}, {}".format(error, format_tb(error, ex_tb)))
+                self.callback.log("Builder error, re-scheduling task: {}, {}".format(error, format_tb(error, ex_tb)))
             except Exception as error:
                 _, _, ex_tb = sys.exc_info()
                 self.callback.log("Unhandled build error: {}, {}".format(error, format_tb(error, ex_tb)))
@@ -482,3 +486,5 @@ class Worker(multiprocessing.Process):
                 # clean up the instance
                 self.notify_job_grab_about_task_end(job)
                 self.vmm.release_vm(vmd.vm_name)
+                self.vm_ip = None
+                self.vm_name = None

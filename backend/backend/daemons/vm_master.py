@@ -53,13 +53,13 @@ class VmMaster(Process):
     def remove_vm_with_dead_builder(self):
         # check that process who acquired VMD stil exists, othrewise release VM
         in_use_vmd_list = self.vmm.get_vm_by_group_and_state_list(None, [VmStates.IN_USE])
-        self.log("VM in use: {}".format(map(lambda x: (x.vm_name, x.state), in_use_vmd_list)))
+        self.log("VM in use: {}".format(map(lambda x: (x.vm_name, x.state, getattr(x, "used_by_pid")), in_use_vmd_list)))
         for vmd in in_use_vmd_list:
             pid = vmd.get_field(self.vmm.rc, "used_by_pid")
             if pid is None:
                 continue
             else:
-                if not psutil.pid_exists(int(pid)):
+                if not psutil.pid_exists(int(pid)) or vmd.vm_name not in psutil.Process(pid).name:
                     self.log("Process `{}` not exists anymore, releasing VM: {} ".format(pid, str(vmd)))
                     self.vmm.release_vm(vmd.vm_name)
 
@@ -69,6 +69,7 @@ class VmMaster(Process):
         # import ipdb; ipdb.set_trace()
         for group in self.vmm.vm_groups:
             sub_list = self.vmm.get_all_vm_in_group(group)
+            # vmd_list.extend(vmd for vmd in sub_list if vmd.state in [VmStates.READY, VmStates.GOT_IP, VmStates.IN_USE])
             vmd_list.extend(vmd for vmd in sub_list if vmd.state in [VmStates.READY, VmStates.GOT_IP])
 
         for vmd in vmd_list:

@@ -26,13 +26,18 @@ end
 # ARGV[1]: user to bound;
 # ARGV[2]: pid of the builder process
 # ARGV[3]: current timestamp for `in_use_since`
+# ARGV[4]: task_id
+# ARGV[5]: build_id
+# ARGV[6]: chroot
 acquire_vm_lua = """
 local old_state = redis.call("HGET", KEYS[1], "state")
 if old_state ~= "ready"  then
     return nil
 else
     redis.call("HMSET", KEYS[1], "state", "in_use", "bound_to_user", ARGV[1],
-               "used_by_pid", ARGV[2], "in_use_since", ARGV[3])
+               "used_by_pid", ARGV[2], "in_use_since", ARGV[3],
+               "task_id": ARGV[], "build_id": ARGV[], "chroot": ARGV[]
+               )
     return "OK"
 end
 """
@@ -149,7 +154,7 @@ class VmManager(object):
             self.log("failed to start vm check, wrong state")
             return False
 
-    def acquire_vm(self, group, username, pid):
+    def acquire_vm(self, group, username, pid, task_id=None, build_id=None, chroot=None):
         """
         Try to acquire VM from pool
         :param group: builder group id, as defined in config
@@ -167,7 +172,8 @@ class VmManager(object):
 
         for vmd in all_vms:
             vm_key = KEY_VM_INSTANCE.format(vm_name=vmd.vm_name)
-            if self.lua_scripts["acquire_vm"](keys=[vm_key], args=[username, pid, time.time()]) == "OK":
+            if self.lua_scripts["acquire_vm"](keys=[vm_key], args=[username, pid, time.time(),
+                                                                   task_id, build_id, chroot]) == "OK":
                 return vmd
         else:
             raise Exception("No VM are available, please wait in queue")

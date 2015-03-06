@@ -152,8 +152,6 @@ class VmMaster(Process):
 
         self.event_handler = EventHandler(self.vmm)
         self.event_handler.start()
-        # self.pubsub_handler = Process(target=pubsub_handler, args=(self.vmm,))
-        # self.pubsub_handler.start()
 
         while True:
             time.sleep(Thresholds.cycle_timeout)

@@ -37,8 +37,7 @@ if old_state ~= "ready"  then
 else
     redis.call("HMSET", KEYS[1], "state", "in_use", "bound_to_user", ARGV[1],
                "used_by_pid", ARGV[2], "in_use_since", ARGV[3],
-               "task_id": ARGV[], "build_id": ARGV[], "chroot": ARGV[]
-               )
+               "task_id",  ARGV[4], "build_id", ARGV[5], "chroot", ARGV[6])
     return "OK"
 end
 """

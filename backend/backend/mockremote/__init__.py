@@ -87,7 +87,6 @@ class MockRemote(object):
     def __init__(self, builder_host=None, job=None,
                  repos=None,
                  callback=None,
-                 macros=None,
                  opts=None,
                  lock=None):
 
@@ -149,7 +148,6 @@ class MockRemote(object):
         # self.recurse = recurse
 
         self.callback = callback
-        self.macros = macros or DEF_MACROS
         self.lock = lock
 
         if not self.callback:
@@ -161,7 +159,7 @@ class MockRemote(object):
             hostname=builder_host,
             job=self.job,
             callback=self.callback,
-            macros=self.macros, repos=self.repos
+            repos=self.repos
         )
 
         self.failed = []

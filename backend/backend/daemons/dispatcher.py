@@ -378,17 +378,10 @@ class Worker(multiprocessing.Process):
             chroot_logfile = "{0}/build-{1}.log".format(
                 chroot_destdir, job.build_id)
 
-            macros = {
-                "copr_username": job.project_owner,
-                "copr_projectname": job.project_name,
-                "vendor": "Fedora Project COPR ({0}/{1})".format(
-                    job.project_owner, job.project_name)
-            }
-
             try:
                 mr = MockRemote(
                     builder_host=self.vm_ip, job=job, repos=chroot_repos,
-                    macros=macros, opts=self.opts, lock=self.lock,
+                    opts=self.opts, lock=self.lock,
                     callback=CliLogCallBack(quiet=True, logfn=chroot_logfile),
                 )
                 mr.check()
@@ -435,7 +428,6 @@ class Worker(multiprocessing.Process):
     def notify_job_grab_about_task_end(self, job):
         self.rc.publish(JOB_GRAB_REMOVE_PUBSUB, job.task_id)
 
-
     def run(self):
         self.init_fedmsg()
         self.vmm.post_init()
@@ -443,28 +435,44 @@ class Worker(multiprocessing.Process):
         self.rc = get_redis_connection(self.opts)
         self.update_process_title(suffix="trying to acquire job")
         while not self.kill_received:
-            self.update_process_title(suffix="trying to acquire job")
+            try:
+                self.update_process_title(suffix="trying to acquire job")
 
-            # self.callback.log("Trying to obtain a job ")
-            job = self.obtain_job()
-            if not job:
-                time.sleep(self.opts.sleeptime)
-                continue
-
-            start_vm_wait_time = time.time()
-            vmd = None
-            while vmd is None:
-                try:
-                    self.update_process_title(suffix="trying to acquire VM for job {} for {}s"
-                                              .format(job.task_id, time.time() - start_vm_wait_time))
-                    vmd = self.vmm.acquire_vm(self.group_id, job.project_owner, os.getpid(),
-                                              job.task_id, job.build_id, job.chroot)
-                except Exception as err:
-                    # TODO: add specific expections
-                    _, _, ex_tb = sys.exc_info()
-                    self.callback.log("Failed to acquire a VM :{}, {}".format(error, format_tb(error, ex_tb)))
+                # self.callback.log("Trying to obtain a job ")
+                job = self.obtain_job()
+                if not job:
                     time.sleep(self.opts.sleeptime)
                     continue
+
+                start_vm_wait_time = time.time()
+                vmd = None
+                while vmd is None:
+                    try:
+                        self.update_process_title(suffix="trying to acquire VM for job {} for {}s"
+                                                  .format(job.task_id, time.time() - start_vm_wait_time))
+                        vmd = self.vmm.acquire_vm(self.group_id, job.project_owner, os.getpid(),
+                                                  job.task_id, job.build_id, job.chroot)
+                    except Exception as error:
+                        # TODO: add specific expections
+                        _, _, ex_tb = sys.exc_info()
+                        self.callback.log("Failed to acquire a VM :{}, {}".format(error, format_tb(error, ex_tb)))
+                        time.sleep(self.opts.sleeptime)
+                        continue
+
+            except Exception as error:
+                _, _, ex_tb = sys.exc_info()
+                self.callback.log("Unhandled build error 2 kind : {}, {}".format(error, format_tb(error, ex_tb)))
+                self.vm_ip = None
+                self.vm_name = None
+
+                if vmd:
+                    self.vmm.release_vm(vmd.vm_name)
+                if job:
+                    self.notify_job_grab_about_task_end(job)
+
+                continue
+
+
 
             try:
                 # got vmd
@@ -486,3 +494,4 @@ class Worker(multiprocessing.Process):
                 self.vmm.release_vm(vmd.vm_name)
                 self.vm_ip = None
                 self.vm_name = None
+

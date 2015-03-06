@@ -252,5 +252,3 @@ def get_redis_connection(opts):
 def format_tb(ex, ex_traceback):
     tb_lines = traceback.format_exception(ex.__class__, ex, ex_traceback)
     return ''.join(tb_lines)
-
-

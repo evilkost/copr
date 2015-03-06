@@ -5,6 +5,7 @@ from itertools import chain
 import json
 import time
 import weakref
+from cStringIO import StringIO
 
 from backend.helpers import get_redis_connection
 from .models import VmDescriptor
@@ -243,6 +244,31 @@ class VmManager(object):
         else:
             vmd_list = self.get_all_vm_in_group(group)
         return [vmd for vmd in vmd_list if vmd.state in states]
+
+    def info(self):
+        """
+        Present information about all managed VMs in human readable form.
+        :return:
+        """
+        buf = StringIO()
+        for group_id in self.vm_groups:
+            bg = self.opts.build_groups[group_id]
+            buf.write("=" * 32)
+            header = "\nVM group #{} {} archs: {}\n===\n".format(group_id, bg["name"], bg["archs"])
+            buf.write(header)
+            vmd_list = self.get_all_vm_in_group(group_id)
+            for vmd in vmd_list:
+                buf.write("\t VM {}, ip: {}\n".format(vmd.vm_name, vmd.vm_ip))
+                for k, v in vmd.to_dict().items():
+                    if k in ["vm_name", "vm_ip", "group"]:
+                        continue
+                    buf.write("\t\t{}: {}\n".format(k, v))
+                buf.write("\n")
+
+            buf.write("\n")
+        return buf.getvalue()
+
+
 
 
 

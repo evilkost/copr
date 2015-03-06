@@ -98,8 +98,17 @@ class BuildJob(object):
         result = copy.deepcopy(self.__dict__)
         result["id"] = self.build_id
         result["pkg_version"] = self.pkg_version
-
+        result["mockchain_macros"] = self.mockchain_macros
         return result
+
+    @property
+    def mockchain_macros(self):
+        return {
+            "copr_username": self.project_owner,
+            "copr_projectname": self.project_name,
+            "vendor": "Fedora Project COPR ({0}/{1})".format(
+                self.project_owner, self.project_name)
+        }
 
     @property
     def pkg_version(self):

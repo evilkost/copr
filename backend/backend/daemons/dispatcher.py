@@ -1,3 +1,4 @@
+from datetime import datetime
 import json
 import os
 import sys
@@ -312,10 +313,9 @@ class Worker(multiprocessing.Process):
         if not task:
             return
 
-        # import ipdb; ipdb.set_trace()
         job = BuildJob(task.data, self.opts)
-
-        self.update_process_title(suffix="Task: {} chroot: {}".format(job.build_id, job.chroot))
+        self.update_process_title(suffix="Task: {} chroot: {}, obtained at {}"
+                                  .format(job.build_id, job.chroot, str(datetime.now())))
 
         # Checking whether the build is not cancelled
         if not self.starting_build(job):
@@ -341,7 +341,7 @@ class Worker(multiprocessing.Process):
         self._announce_start(job)
         self.update_process_title(suffix="Task: {} chroot: {} build started".format(job.build_id, job.chroot))
         status = BuildStatus.SUCCEEDED
-        chroot_destdir = os.path.normpath(job.destdir + '/' + job.chroot)
+        chroot_destdir = os.path.normpath("{}/{}".format(job.destdir, job.chroot))
 
         # setup our target dir locally
         if not os.path.exists(chroot_destdir):
@@ -457,8 +457,6 @@ class Worker(multiprocessing.Process):
                 try:
                     self.update_process_title(suffix="trying to acquire VM for job {} for {}s"
                                               .format(job.task_id, time.time() - start_vm_wait_time))
-                    # self.callback.log("Trying to acquire a VM for job: {}".format(str(job)))
-                    # from celery.contrib import rdb; rdb.set_trace()
                     vmd = self.vmm.acquire_vm(self.group_id, job.project_owner, os.getpid(),
                                               job.task_id, job.build_id, job.chroot)
                 except Exception as err:

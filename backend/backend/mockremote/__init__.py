@@ -159,14 +159,8 @@ class MockRemote(object):
         self.builder = Builder(
             opts=self.opts,
             hostname=builder_host,
-            username=self.opts.build_user,
             job=self.job,
-            chroot=self.job.chroot,
-            timeout=self.job.timeout or DEF_BUILD_TIMEOUT,
-            buildroot_pkgs=self.job.buildroot_pkgs,
             callback=self.callback,
-            remote_basedir=self.opts.remote_basedir,
-            remote_tempdir=self.opts.remote_tempdir,
             macros=self.macros, repos=self.repos
         )
 
@@ -321,15 +315,12 @@ class MockRemote(object):
 
         self.mark_dir_with_build_id()
 
-
-    # def start_build_thread(self):
-    #     pass
     def build_pkg_and_process_results(self):
         self.prepare_build_dir()
 
         # building
         self.callback.start_build(self.pkg)
-        # b_status, b_out, b_err, build_details = self.builder.build(self.pkg)
+
         build_stdout = ""
         build_error = build_details = None
         try:

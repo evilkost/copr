@@ -4,6 +4,7 @@ from __future__ import print_function
 from __future__ import unicode_literals
 from __future__ import division
 from __future__ import absolute_import
+import json
 
 from multiprocessing import Process
 import time
@@ -15,7 +16,7 @@ from retask.task import Task
 from retask.queue import Queue
 
 from ..actions import Action
-from ..constants import JOB_GRAB_REMOVE_PUBSUB
+from ..constants import JOB_GRAB_TASK_END_PUBSUB, BuildStatus
 from ..helpers import get_redis_connection, format_tb
 from ..exceptions import CoprJobGrabError
 from ..frontend import FrontendClient
@@ -35,11 +36,12 @@ class CoprJobGrab(Process):
     :param Bunch opts: backend config
     :param events: :py:class:`multiprocessing.Queue` to listen
         for events from other backend components
+    :type frontend_client: FrontendClient
     :param lock: :py:class:`multiprocessing.Lock` global backend lock
 
     """
 
-    def __init__(self, opts, events, lock):
+    def __init__(self, opts, events, frontend_client, lock):
         # base class initialization
         super(CoprJobGrab, self).__init__(name="jobgrab")
 
@@ -50,8 +52,10 @@ class CoprJobGrab(Process):
         self.added_jobs = set()
         self.lock = lock
 
+        self.frontend_client = frontend_client
+
         self.rc = None
-        self.rem_channel = None
+        self.channel = None
 
     def connect_queues(self):
         """
@@ -65,9 +69,9 @@ class CoprJobGrab(Process):
                 self.task_queues_by_arch[arch] = queue
 
         self.rc = get_redis_connection(self.opts)
-        self.rem_channel = self.rc.pubsub(ignore_subscribe_messages=True)
-        self.rem_channel.subscribe(JOB_GRAB_REMOVE_PUBSUB)
-        while self.rem_channel.get_message() is not None:
+        self.channel = self.rc.pubsub(ignore_subscribe_messages=True)
+        self.channel.subscribe(JOB_GRAB_TASK_END_PUBSUB)
+        while self.channel.get_message() is not None:
             pass
 
     def event(self, what):
@@ -165,23 +169,51 @@ class CoprJobGrab(Process):
                     self.event("Error during processing action `{}`: {}"
                                .format(action, error))
 
-    def remove_jobs(self):
+    def process_task_end_pubsub(self):
         """
         Listens for pubsub and remove jobs from self.added_jobs so we can re-add jobs failed due to VM error
         """
         self.event("Trying to rcv remove msg")
         while True:
-            raw = self.rem_channel.get_message()
+            raw = self.channel.get_message()
             self.event("Recv rem msg: ".format(raw))
             if raw is None:
                 break
             if raw["type"] != "message":
                 continue
             try:
-                msg = raw["data"]
-                if msg in self.added_jobs:
-                    self.added_jobs.remove(msg)
-                    self.event("Remove task from added_jobs".format(msg))
+                msg = json.loads(raw["data"])
+                # msg: {"action": ["remove"|"reschedule"], "task_id": ..., "build_id"..., }
+                # Actions: "remove" simply remove `task_id` from self.added_job
+                #          "reschedule" additionally call frontend and set pending state before removal
+                if "action" not in msg:
+                    self.event("Missing required field `action`, msg ignored".format(msg))
+                    continue
+                action = msg["action"]
+                if action not in ["remove", "reschedule"]:
+                    self.event("Action `{}` not allowed, msg ignored ".format(action, msg))
+                    continue
+
+                if "task_id" not in msg:
+                    self.event("Missing required field `task_id`, msg ignored".format(msg))
+                    continue
+
+                task_id = msg["task_id"]
+                if task_id not in self.added_jobs:
+                    self.event("Task `{}` not present in added jobs,  msg ignored ".format(task_id, msg))
+                    continue
+
+                if action == "remove":
+                        self.added_jobs.remove(task_id)
+                        self.event("Remove task from added_jobs".format(msg))
+                if action == "reschedule":
+                        if "build_id" not in msg or "chroot" not in msg:
+                            self.added_jobs.remove(task_id)
+                            self.event("Removed task from added_jobs".format(msg))
+                        else:
+                            self.frontend_client.reschedule_build(msg["build_id"], msg["chroot"])
+                            self.added_jobs.remove(task_id)
+
             except Exception as err:
                 _, _, ex_tb = sys.exc_info()
                 self.event("Error receiving message from remove pubsub: raw msg: {}, error: {}, traceback:\n{}"
@@ -196,7 +228,7 @@ class CoprJobGrab(Process):
         try:
             while True:
                 try:
-                    self.remove_jobs()
+                    self.process_task_end_pubsub()
                     self.load_tasks()
 
                     self.event("Added jobs after remove and load: {}".format(self.added_jobs))

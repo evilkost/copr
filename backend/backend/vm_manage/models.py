@@ -21,6 +21,10 @@ class VmDescriptor(object):
         self.bound_to_user = None
         # self.used_by_pid = None
 
+    @property
+    def vm_key(self):
+        return KEY_VM_INSTANCE.format(vm_name=self.vm_name)
+
     def __str__(self):
         return pformat(self.__dict__)
 

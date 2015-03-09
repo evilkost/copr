@@ -26,4 +26,4 @@ class BuildStatus(object):
     SKIPPED = 5
 
 
-JOB_GRAB_REMOVE_PUBSUB = "copr:backend:daemons:job_grab:remove:pubsub::"
+JOB_GRAB_TASK_END_PUBSUB = "copr:backend:daemons:job_grab:task_end:pubsub::"

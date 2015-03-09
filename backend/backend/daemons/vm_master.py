@@ -4,6 +4,7 @@ from __future__ import print_function
 from __future__ import unicode_literals
 from __future__ import division
 from __future__ import absolute_import
+import json
 
 from multiprocessing import Process
 import time
@@ -12,7 +13,7 @@ import traceback
 import sys
 import psutil
 
-from backend.constants import DEF_BUILD_TIMEOUT
+from backend.constants import DEF_BUILD_TIMEOUT, JOB_GRAB_TASK_END_PUBSUB
 from backend.helpers import format_tb
 from backend.vm_manage import VmStates, Thresholds, KEY_VM_POOL_INFO
 from backend.vm_manage.event_handle import EventHandler
@@ -59,9 +60,21 @@ class VmMaster(Process):
             if pid is None:
                 continue
             else:
-                if not psutil.pid_exists(int(pid)) or vmd.vm_name not in psutil.Process(pid).name:
+                pid = int(pid)
+                if not psutil.pid_exists(pid) or vmd.vm_name not in psutil.Process(pid).name:
                     self.log("Process `{}` not exists anymore, releasing VM: {} ".format(pid, str(vmd)))
                     self.vmm.release_vm(vmd.vm_name)
+
+                    vmd_dict = vmd.to_dict()
+                    if all(x in vmd_dict for x in ["build_id", "task_id", "chroot"]):
+                        request = {
+                            "action": "reschedule",
+                            "build_id": vmd.build_id,
+                            "task_id": vmd.task_id,
+                            "chroot": vmd.chroot,
+                        }
+
+                        self.vmm.rc.publish(JOB_GRAB_TASK_END_PUBSUB, json.dumps(request))
 
     def check_vms_health(self):
         # for machines in state ready and time.time() - vm.last_health_check > threshold_health_check_period
@@ -69,8 +82,8 @@ class VmMaster(Process):
         # import ipdb; ipdb.set_trace()
         for group in self.vmm.vm_groups:
             sub_list = self.vmm.get_all_vm_in_group(group)
-            # vmd_list.extend(vmd for vmd in sub_list if vmd.state in [VmStates.READY, VmStates.GOT_IP, VmStates.IN_USE])
-            vmd_list.extend(vmd for vmd in sub_list if vmd.state in [VmStates.READY, VmStates.GOT_IP])
+            vmd_list.extend(vmd for vmd in sub_list if vmd.state in [VmStates.READY, VmStates.GOT_IP, VmStates.IN_USE])
+            # vmd_list.extend(vmd for vmd in sub_list if vmd.state in [VmStates.READY, VmStates.GOT_IP])
 
         for vmd in vmd_list:
             last_health_check = vmd.get_field(self.vmm.rc, "last_health_check")
@@ -84,14 +97,10 @@ class VmMaster(Process):
         for group in range(self.opts.build_groups_count):
             max_vm_total = self.opts.build_groups[group]["max_vm_total"]
             active_vmd_list = self.vmm.get_vm_by_group_and_state_list(
-                group, [VmStates.GOT_IP, VmStates.READY, VmStates.IN_USE])
+                group, [VmStates.GOT_IP, VmStates.READY, VmStates.IN_USE, VmStates.CHECK_HEALH])
 
             # self.log("active VM#: {}".format(map(lambda x: (x.vm_name, x.state), active_vmd_list)))
-
             if len(active_vmd_list) + self.vmm.spawner.children_number >= max_vm_total:
-                # self.log("active VM#: {}, spawn processes #: {}"
-                #          .format(map(lambda x: (x.vm_name, x.state), active_vmd_list),
-                #                  self.vmm.spawner.children_number))
                 continue
             last_vm_spawn_start = self.vmm.rc.hget(KEY_VM_POOL_INFO.format(group=group), "last_vm_spawn_start")
             if last_vm_spawn_start:
@@ -99,15 +108,17 @@ class VmMaster(Process):
                 if since_last_spawn < Thresholds.vm_spawn_min_interval:
                     self.log("time after previous spawn attempt < vm_spawn_min_interval")
                     continue
+
             if len(self.vmm.spawner.child_processes) >= self.opts.build_groups[group]["max_spawn_processes"]:
                 self.log("max_spawn_processes reached")
                 continue
+
             if len(self.vmm.get_all_vm_in_group(group)) >= self.opts.build_groups[group]["max_vm_total"]:
                 self.log("fail save ALL VM >= max_vm_total reached")
                 self.log("all VM#: {}".format(map(str, self.vmm.get_all_vm_in_group(group))))
                 continue
 
-            self.log("start spawning new VM")
+            self.log("start spawning new VM for group: {}".format(self.opts.build_groups[group]["name"]))
             self.vmm.rc.hset(KEY_VM_POOL_INFO.format(group=group), "last_vm_spawn_start", time.time())
             try:
                 self.vmm.spawner.start_spawn(group)
@@ -130,17 +141,15 @@ class VmMaster(Process):
         self.log("starting do_cycle")
 
         # TODO: each check should be executed in threads ... and finish with join?
-        self.terminate_abandoned_vms()
+        # self.terminate_abandoned_vms()
         self.remove_old_dirty_vms()
         self.check_vms_health()
         self.start_spawn_if_required()
-        self.remove_vm_with_dead_builder()
+        # self.remove_vm_with_dead_builder()
 
         self.vmm.checker.recycle()
         self.vmm.spawner.recycle()
         # self.vmm.terminator.recycle()
-
-        # self.check_vm_in_use() # detect broken VMS faster
 
     def run(self):
         if self.vmm.spawner is None or self.vmm.terminator is None or self.vmm.checker is None:

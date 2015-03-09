@@ -6,7 +6,7 @@ from threading import Thread
 import time
 import sys
 from backend.helpers import format_tb
-from backend.vm_manage import Thresholds, VmStates, PUBSUB_MB, EventTopics
+from backend.vm_manage import Thresholds, VmStates, PUBSUB_MB, EventTopics, KEY_VM_INSTANCE
 
 
 def do_recycle(vmm):
@@ -21,6 +21,19 @@ def do_recycle(vmm):
         # vmm.spawner.recycle()
         vmm.terminator.recycle()
 
+# KEYS[1]: VMD key
+on_health_check_success_lua = """
+local old_state = redis.call("HGET", KEYS[1], "state")
+if old_state ~= "check_health" and old_state ~= "in_use" then
+    return nil
+else
+    redis.call("HSET", KEYS[1], "check_fails", 0)
+    if old_state == "check_health" then
+        redis.call("HSET", KEYS[1], "state", "ready")
+    end
+end
+"""
+
 
 class EventHandler(Process):
 
@@ -30,15 +43,19 @@ class EventHandler(Process):
         self.kill_received = False
 
         # self.do_recycle_proc = None
-
         self.handlers_map = {
             EventTopics.HEALTH_CHECK: self.on_health_check_result,
             EventTopics.VM_SPAWNED: self.on_vm_spawned,
             EventTopics.VM_TERMINATION_REQUEST: self.on_vm_termination_request,
             EventTopics.VM_TERMINATED: self.on_vm_termination_result,
         }
+        self.lua_scripts = {}
+
+    def post_init(self):
+        self.lua_scripts["on_health_check_success"] = self.vmm.rc.register_script(on_health_check_success_lua)
         
     def on_health_check_result(self, msg):
+
         try:
             vmd = self.vmm.get_vm_by_name(msg["vm_name"])
             check_fails_count = int(vmd.get_field(self.vmm.rc, "check_fails") or 0)
@@ -46,12 +63,11 @@ class EventHandler(Process):
             self.vmm.log("VM record disappeared, ignoring health check results,  msg: {}"
                          .format(msg), who="on_health_check_result")
             return
-    
+
         if msg["result"] == "OK":
+            self.lua_scripts["on_health_check_success"](keys=[vmd.vm_key], args=[time.time()])
             self.vmm.log("recording success for ip:{} name:{} "
                          .format(vmd.vm_ip, vmd.vm_name), who="on_health_check_result")
-    
-            vmd.store_field(self.vmm.rc, "check_fails", 0)
         else:
             if vmd.state == VmStates.GOT_IP:
                 self.vmm.log("New VM doesn't respond to ping: {}, terminating"
@@ -82,6 +98,8 @@ class EventHandler(Process):
 
     def run(self):
         setproctitle("Event Handler")
+
+        self.post_init()
 
         self.do_recycle_proc = Thread(target=do_recycle, args=(self.vmm,))
         self.do_recycle_proc.start()

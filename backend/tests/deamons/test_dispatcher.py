@@ -473,7 +473,7 @@ class TestDispatcher(object):
         assert not os.path.exists(self.logfile_path)
 
     def test_mark_started(self, init_worker):
-        self.worker.frontend_callback = self.worker_fe_callback
+        self.worker.frontend_client = self.worker_fe_callback
         self.worker.mark_started(self.job)
 
         expected_call = mock.call({'builds': [
@@ -492,7 +492,7 @@ class TestDispatcher(object):
         assert expected_call == self.worker_fe_callback.update.call_args
 
     def test_mark_started_error(self, init_worker):
-        self.worker.frontend_callback = self.worker_fe_callback
+        self.worker.frontend_client = self.worker_fe_callback
         self.worker_fe_callback.update.side_effect = IOError()
 
         with pytest.raises(CoprWorkerError):
@@ -502,7 +502,7 @@ class TestDispatcher(object):
         self.job.started_on = self.test_time
         self.job.ended_on = self.test_time + 10
 
-        self.worker.frontend_callback = self.worker_fe_callback
+        self.worker.frontend_client = self.worker_fe_callback
         self.worker.mark_started(self.job)
 
         expected_call = mock.call({'builds': [
@@ -524,7 +524,7 @@ class TestDispatcher(object):
         self.job.started_on = self.test_time
         self.job.ended_on = self.test_time + 10
 
-        self.worker.frontend_callback = self.worker_fe_callback
+        self.worker.frontend_client = self.worker_fe_callback
         self.worker_fe_callback.update.side_effect = IOError()
 
         with pytest.raises(CoprWorkerError):
@@ -534,14 +534,14 @@ class TestDispatcher(object):
         self.job.started_on = self.test_time
         self.job.ended_on = self.test_time + 10
 
-        self.worker.frontend_callback = self.worker_fe_callback
+        self.worker.frontend_client = self.worker_fe_callback
         self.worker.starting_build(self.job)
 
         expected_call = mock.call(self.job_build_id, self.CHROOT)
         assert expected_call == self.worker_fe_callback.starting_build.call_args
 
     def test_starting_build_error(self, init_worker):
-        self.worker.frontend_callback = self.worker_fe_callback
+        self.worker.frontend_client = self.worker_fe_callback
         self.worker_fe_callback.starting_build.side_effect = IOError()
 
         with pytest.raises(CoprWorkerError):
@@ -553,7 +553,7 @@ class TestDispatcher(object):
         mc_os.path.exists.return_value = False
         mc_os.makedirs.side_effect = IOError()
 
-        self.worker.frontend_callback = self.worker_fe_callback
+        self.worker.frontend_client = self.worker_fe_callback
 
         self.worker.do_job(self.job)
         assert self.job.status == BuildStatus.FAILURE
@@ -563,7 +563,7 @@ class TestDispatcher(object):
     def test_do_job(self, mc_mr_class, init_worker, reg_vm, mc_register_build_result):
         assert not os.path.exists(self.DESTDIR_CHROOT)
 
-        self.worker.frontend_callback = self.worker_fe_callback
+        self.worker.frontend_client = self.worker_fe_callback
         self.worker.do_job(self.job)
         assert self.job.status == BuildStatus.SUCCEEDED
         assert os.path.exists(self.DESTDIR_CHROOT)
@@ -575,7 +575,7 @@ class TestDispatcher(object):
             "results": self.test_time,
         }
 
-        self.worker.frontend_callback = self.worker_fe_callback
+        self.worker.frontend_client = self.worker_fe_callback
         self.worker.do_job(self.job)
         assert self.job.status == BuildStatus.SUCCEEDED
         assert self.job.results == self.test_time
@@ -586,7 +586,7 @@ class TestDispatcher(object):
                              reg_vm, mc_register_build_result):
         mc_mr_class.return_value.build_pkg.side_effect = MockRemoteError("foobar")
 
-        self.worker.frontend_callback = self.worker_fe_callback
+        self.worker.frontend_client = self.worker_fe_callback
         self.worker.do_job(self.job)
         assert self.job.status == BuildStatus.FAILURE
 

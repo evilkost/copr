@@ -47,8 +47,6 @@ class Executor(object):
             proc.terminate()
             proc.join()
 
-    def still_working(self):
-        return self.children_number > 0
 
     @property
     def children_number(self):

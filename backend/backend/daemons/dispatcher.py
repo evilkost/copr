@@ -15,7 +15,7 @@ from ..exceptions import MockRemoteError, CoprWorkerError, VmError
 from ..job import BuildJob
 from ..mockremote import MockRemote
 from ..frontend import FrontendClient
-from ..constants import BuildStatus, JOB_GRAB_REMOVE_PUBSUB
+from ..constants import BuildStatus, JOB_GRAB_TASK_END_PUBSUB
 from ..helpers import register_build_result, format_tb, get_redis_connection
 
 
@@ -72,7 +72,7 @@ class Worker(multiprocessing.Process):
 
     """
 
-    def __init__(self, opts, events, worker_num, group_id,
+    def __init__(self, opts, events, frontend_client, worker_num, group_id,
                  callback=None, lock=None):
 
         # base class initialization
@@ -90,7 +90,8 @@ class Worker(multiprocessing.Process):
 
         self.kill_received = False
         self.lock = lock
-        self.frontend_callback = FrontendClient(opts, events)
+        # self.frontend_client = FrontendClient(opts, events)
+        self.frontend_client = frontend_client
         self.callback = callback
         if not self.callback:
             log_name = "worker-{0}-{1}.log".format(
@@ -198,24 +199,7 @@ class Worker(multiprocessing.Process):
 
         data = {"builds": [build]}
         try:
-            self.frontend_callback.update(data)
-        except:
-            raise CoprWorkerError(
-                "Could not communicate to front end to submit status info")
-
-    def mark_pending(self, job):
-        """
-        Re-schedule job
-        :param job:
-        :return:
-        """
-        job.status = BuildStatus.PENDING
-        build = job.to_dict()
-        self.callback.log("build: {}".format(build))
-
-        data = {"builds": [build]}
-        try:
-            self.frontend_callback.update(data)
+            self.frontend_client.update(data)
         except:
             raise CoprWorkerError(
                 "Could not communicate to front end to submit status info")
@@ -232,7 +216,7 @@ class Worker(multiprocessing.Process):
         data = {"builds": [job.to_dict()]}
 
         try:
-            self.frontend_callback.update(data)
+            self.frontend_client.update(data)
         except Exception as err:
             raise CoprWorkerError(
                 "Could not communicate to front end to submit results: {}"
@@ -248,7 +232,7 @@ class Worker(multiprocessing.Process):
         """
 
         try:
-            can_start = self.frontend_callback.starting_build(job.build_id, job.chroot)
+            can_start = self.frontend_client.starting_build(job.build_id, job.chroot)
         except Exception as err:
             raise CoprWorkerError(
                 "Could not communicate to front end to submit results: {}"
@@ -425,8 +409,15 @@ class Worker(multiprocessing.Process):
 
         setproctitle(title)
 
-    def notify_job_grab_about_task_end(self, job):
-        self.rc.publish(JOB_GRAB_REMOVE_PUBSUB, job.task_id)
+    def notify_job_grab_about_task_end(self, job, do_reschedule=False):
+        request = {
+            "action": "reschedule" if do_reschedule else "remove",
+            "build_id": job.build_id,
+            "task_id": job.task_id,
+            "chroot": job.chroot,
+        }
+
+        self.rc.publish(JOB_GRAB_TASK_END_PUBSUB, json.dumps(request))
 
     def run(self):
         self.init_fedmsg()
@@ -435,44 +426,28 @@ class Worker(multiprocessing.Process):
         self.rc = get_redis_connection(self.opts)
         self.update_process_title(suffix="trying to acquire job")
         while not self.kill_received:
-            try:
-                self.update_process_title(suffix="trying to acquire job")
+            self.update_process_title(suffix="trying to acquire job")
 
-                # self.callback.log("Trying to obtain a job ")
-                job = self.obtain_job()
-                if not job:
-                    time.sleep(self.opts.sleeptime)
-                    continue
-
-                start_vm_wait_time = time.time()
-                vmd = None
-                while vmd is None:
-                    try:
-                        self.update_process_title(suffix="trying to acquire VM for job {} for {}s"
-                                                  .format(job.task_id, time.time() - start_vm_wait_time))
-                        vmd = self.vmm.acquire_vm(self.group_id, job.project_owner, os.getpid(),
-                                                  job.task_id, job.build_id, job.chroot)
-                    except Exception as error:
-                        # TODO: add specific expections
-                        _, _, ex_tb = sys.exc_info()
-                        self.callback.log("Failed to acquire a VM :{}, {}".format(error, format_tb(error, ex_tb)))
-                        time.sleep(self.opts.sleeptime)
-                        continue
-
-            except Exception as error:
-                _, _, ex_tb = sys.exc_info()
-                self.callback.log("Unhandled build error 2 kind : {}, {}".format(error, format_tb(error, ex_tb)))
-                self.vm_ip = None
-                self.vm_name = None
-
-                if vmd:
-                    self.vmm.release_vm(vmd.vm_name)
-                if job:
-                    self.notify_job_grab_about_task_end(job)
-
+            # self.callback.log("Trying to obtain a job ")
+            job = self.obtain_job()
+            if not job:
+                time.sleep(self.opts.sleeptime)
                 continue
 
-
+            start_vm_wait_time = time.time()
+            vmd = None
+            while vmd is None:
+                try:
+                    self.update_process_title(suffix="trying to acquire VM for job {} for {}s"
+                                              .format(job.task_id, time.time() - start_vm_wait_time))
+                    vmd = self.vmm.acquire_vm(self.group_id, job.project_owner, os.getpid(),
+                                              job.task_id, job.build_id, job.chroot)
+                except Exception as error:
+                    # TODO: add specific expections
+                    _, _, ex_tb = sys.exc_info()
+                    self.callback.log("Failed to acquire a VM :{}, {}".format(error, format_tb(error, ex_tb)))
+                    time.sleep(self.opts.sleeptime)
+                    continue
 
             try:
                 # got vmd
@@ -481,16 +456,17 @@ class Worker(multiprocessing.Process):
                 self.vm_ip = vmd.vm_ip
 
                 self.do_job(job)
+                self.notify_job_grab_about_task_end(job)
             except VmError as error:
                 _, _, ex_tb = sys.exc_info()
-                self.mark_pending(job)
+                self.notify_job_grab_about_task_end(job, do_reschedule=True)
                 self.callback.log("Builder error, re-scheduling task: {}, {}".format(error, format_tb(error, ex_tb)))
             except Exception as error:
                 _, _, ex_tb = sys.exc_info()
                 self.callback.log("Unhandled build error: {}, {}".format(error, format_tb(error, ex_tb)))
+                self.notify_job_grab_about_task_end(job, do_reschedule=True)
             finally:
                 # clean up the instance
-                self.notify_job_grab_about_task_end(job)
                 self.vmm.release_vm(vmd.vm_name)
                 self.vm_ip = None
                 self.vm_name = None

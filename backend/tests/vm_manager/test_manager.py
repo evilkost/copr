@@ -1,38 +1,25 @@
 # coding: utf-8
-import copy
 
-from collections import defaultdict
-import json
 import types
-from bunch import Bunch
 import time
 from multiprocessing import Queue
-from backend import exceptions
-from backend.exceptions import MockRemoteError, CoprSignError, BuilderError
 
-import tempfile
-import shutil
-import os
-
+from bunch import Bunch
 import six
-from backend.vm_manage import VmStates, Thresholds, KEY_VM_POOL, PUBSUB_VM_TERMINATION, PUBSUB_SPAWNER
-from backend.vm_manage.check import HealthChecker
+
+from backend import exceptions
+from backend.vm_manage import VmStates, KEY_VM_POOL, PUBSUB_VM_TERMINATION
 from backend.vm_manage.manager import VmManager
 from backend.daemons.vm_master import VmMaster
-from backend.vm_manage.models import VmDescriptor
+
 
 if six.PY3:
     from unittest import mock
-    from unittest.mock import patch, MagicMock
 else:
     import mock
-    from mock import patch, MagicMock
+    from mock import MagicMock
 
 import pytest
-
-from backend.mockremote import MockRemote, get_target_dir
-from backend.mockremote.callback import DefaultCallBack
-from backend.job import BuildJob
 
 
 """

@@ -11,14 +11,17 @@ from backend.helpers import get_redis_connection
 from .models import VmDescriptor
 from . import VmStates, KEY_VM_INSTANCE, KEY_VM_POOL, EventTopics, PUBSUB_MB
 
-# KEYS [1]: VMD key
-# ARGS: None
+# KEYS[1]: VMD key
+# ARGV[1] current timestamp for `last_health_check`
 set_checking_state_lua = """
 local old_state = redis.call("HGET", KEYS[1], "state")
-if old_state ~= "got_ip" and old_state ~= "ready"  then
+if old_state ~= "got_ip" and old_state ~= "ready" and old_state ~= "in_use" then
     return nil
 else
-    redis.call("HSET", KEYS[1], "state", "check_health")
+    if old_state ~= "in_use" then
+        redis.call("HSET", KEYS[1], "state", "check_health")
+    end
+    redis.call("HSET", KEYS[1], "last_health_check", ARGV[1])
     return "OK"
 end
 """
@@ -50,8 +53,7 @@ if old_state ~= "in_use" then
     return nil
 else
     redis.call("HMSET", KEYS[1], "state", "ready", "last_release", ARGV[1])
-    redis.call("HDEL", KEYS[1], "in_use_since")
-    redis.call("HDEL", KEYS[1], "used_by_pid")
+    redis.call("HDEL", KEYS[1], "in_use_since", "used_by_pid", "task_id", "build_id", "chroot")
     return "OK"
 end
 """
@@ -131,9 +133,14 @@ class VmManager(object):
         pipe.execute()
         self.log("registered new VM: {}".format(vmd))
 
-    def do_vm_check(self, vm_name):
-        # vm = self.get_vm_by_name(vm_name)
+    def do_vm_check_in_use(self, vm_name):
         vm_key = KEY_VM_INSTANCE.format(vm_name=vm_name)
+        vmd = self.get_vm_by_name(vm_name)
+        if vmd.state != VmStates.IN_USE:
+            return
+
+
+        ###
 
         if self.lua_scripts["set_checking_state"](keys=[vm_key]) == "OK":
             # entered
@@ -142,10 +149,29 @@ class VmManager(object):
             try:
                 pipe = self.rc.pipeline()
                 vmd.store_field(pipe, "last_health_check", time.time())
+                # !! UNLESS old_state is IN_USE !!
                 vmd.store_field(pipe, "state", VmStates.READY)
                 pipe.execute()
                 self.checker.run_check_health(vmd.vm_name, vmd.vm_ip)
 
+            except Exception as err:
+                self.log("Health check failed: {}, going to terminate".format(err))
+                self.terminate_vm(vm_name)
+
+        else:
+            self.log("failed to start vm check, wrong state")
+            return False
+
+    def do_vm_check(self, vm_name):
+        # vm = self.get_vm_by_name(vm_name)
+        vm_key = KEY_VM_INSTANCE.format(vm_name=vm_name)
+
+        if self.lua_scripts["set_checking_state"](keys=[vm_key], args=[time.time()]) == "OK":
+            # entered
+            self.log("checking vm: {}".format(vm_name))
+            vmd = self.get_vm_by_name(vm_name)
+            try:
+                self.checker.run_check_health(vmd.vm_name, vmd.vm_ip)
             except Exception as err:
                 self.log("Health check failed: {}, going to terminate".format(err))
                 self.terminate_vm(vm_name)

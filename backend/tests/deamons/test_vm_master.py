@@ -16,7 +16,7 @@ import shutil
 import os
 
 import six
-from backend.vm_manage import VmStates, Thresholds, KEY_VM_POOL, PUBSUB_VM_TERMINATION, PUBSUB_SPAWNER
+from backend.vm_manage import VmStates, Thresholds, KEY_VM_POOL, PUBSUB_VM_TERMINATION
 from backend.vm_manage.check import HealthChecker
 from backend.vm_manage.manager import VmManager
 from backend.daemons.vm_master import VmMaster

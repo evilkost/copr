@@ -17,48 +17,48 @@ from ..ans_utils import run_ansible_playbook, run_ansible_playbook_once
 from backend.helpers import get_redis_connection, format_tb
 from backend.vm_manage import PUBSUB_MB, EventTopics
 from backend.vm_manage.executor import Executor
-from ..exceptions import CoprWorkerSpawnFailError
+from ..exceptions import CoprSpawnFailError
 
 
-def try_spawn(args, log_fn=None):
-    """
-    Tries to spawn new vm using ansible
+# def try_spawn(args, log_fn=None):
+#     """
+#     Tries to spawn new vm using ansible
+#
+#     :param args: ansible for ansible command which spawns VM
+#     :return str: valid ip address of new machine (nobody guarantee machine availability)
+#     """
+#     if log_fn is None:
+#         log_fn = lambda x: pprint(x)
+#
+#     result = run_ansible_playbook_once(args, name="spawning instance")
+#
+#     if not result:
+#         raise CoprSpawnFailError("No result, trying again")
+#     match = re.search(r'IP=([^\{\}"]+)', result, re.MULTILINE)
+#
+#     if not match:
+#         raise CoprSpawnFailError("No ip in the result, trying again")
+#     ipaddr = match.group(1)
+#     match = re.search(r'vm_name=([^\{\}"]+)', result, re.MULTILINE)
+#
+#     if match:
+#         vm_name = match.group(1)
+#     else:
+#         raise CoprSpawnFailError("No vm_name in the playbook output")
+#     log_fn("got instance ip: {0}".format(ipaddr))
+#
+#     try:
+#         IP(ipaddr)
+#     except ValueError:
+#         # if we get here we"re in trouble
+#         msg = "Invalid IP back from spawn_instance - dumping cache output\n"
+#         msg += str(result)
+#         raise CoprSpawnFailError(msg)
+#
+#     return {"ip": ipaddr, "vm_name": vm_name}
+#
 
-    :param args: ansible for ansible command which spawns VM
-    :return str: valid ip address of new machine (nobody guarantee machine availability)
-    """
-    if log_fn is None:
-        log_fn = lambda x: pprint(x)
-
-    result = run_ansible_playbook(args, name="spawning instance",
-                                  retry_sleep_time=10.0, attempts=1)
-    if not result:
-        raise CoprWorkerSpawnFailError("No result, trying again")
-    match = re.search(r'IP=([^\{\}"]+)', result, re.MULTILINE)
-
-    if not match:
-        raise CoprWorkerSpawnFailError("No ip in the result, trying again")
-    ipaddr = match.group(1)
-    match = re.search(r'vm_name=([^\{\}"]+)', result, re.MULTILINE)
-
-    if match:
-        vm_name = match.group(1)
-    else:
-        raise CoprWorkerSpawnFailError("No vm_name in the playbook output")
-    log_fn("got instance ip: {0}".format(ipaddr))
-
-    try:
-        IP(ipaddr)
-    except ValueError:
-        # if we get here we"re in trouble
-        msg = "Invalid IP back from spawn_instance - dumping cache output\n"
-        msg += str(result)
-        raise CoprWorkerSpawnFailError(msg)
-
-    return {"ip": ipaddr, "vm_name": vm_name}
-
-
-def spawn_instance(spawn_playbook, log_fn=None):
+def spawn_instance(spawn_playbook, log_fn):
     """
     Spawn new VM, executing the following steps:
 
@@ -70,8 +70,6 @@ def spawn_instance(spawn_playbook, log_fn=None):
     :return ip: of created VM
     :return None: if couldn't find playbook to spin ip VM
     """
-    if log_fn is None:
-        log_fn = lambda x: pprint(x)
     log_fn("Spawning a builder")
 
     start = time.time()
@@ -82,30 +80,30 @@ def spawn_instance(spawn_playbook, log_fn=None):
     try:
         result = run_ansible_playbook_once(spawn_args, name="spawning instance", log_fn=log_fn)
     except Exception as err:
-        raise CoprWorkerSpawnFailError("Error during ansible invocation: {}".format(err.__dict__))
+        raise CoprSpawnFailError("Error during ansible invocation: {}".format(err.__dict__))
 
     if not result:
-        raise CoprWorkerSpawnFailError("No result, trying again")
+        raise CoprSpawnFailError("No result, trying again")
     match = re.search(r'IP=([^\{\}"]+)', result, re.MULTILINE)
 
     if not match:
-        raise CoprWorkerSpawnFailError("No ip in the result, trying again")
+        raise CoprSpawnFailError("No ip in the result, trying again")
     ipaddr = match.group(1)
     match = re.search(r'vm_name=([^\{\}"]+)', result, re.MULTILINE)
 
     if match:
         vm_name = match.group(1)
     else:
-        raise CoprWorkerSpawnFailError("No vm_name in the playbook output")
+        raise CoprSpawnFailError("No vm_name in the playbook output")
     log_fn("got instance ip: {0}".format(ipaddr))
 
     try:
         IP(ipaddr)
     except ValueError:
         # if we get here we"re in trouble
-        msg = "Invalid IP back from spawn_instance - dumping cache output\n"
+        msg = "Invalid IP: `{}` back from spawn_instance - dumping cache output\n".format(ipaddr)
         msg += str(result)
-        raise CoprWorkerSpawnFailError(msg)
+        raise CoprSpawnFailError(msg)
 
     log_fn("Instance spawn/provision took {0} sec".format(time.time() - start))
     return {"vm_ip": ipaddr, "vm_name": vm_name}
@@ -123,7 +121,7 @@ def do_spawn_and_publish(opts, events, spawn_playbook, group):
         log_fn("Going to spawn")
         spawn_result = spawn_instance(spawn_playbook, log_fn)
         log_fn("Spawn finished")
-    except CoprWorkerSpawnFailError as err:
+    except CoprSpawnFailError as err:
         log_fn("Failed to spawn builder: {}".format(err))
         return
     except Exception as err:
@@ -148,19 +146,19 @@ class Spawner(Executor):
         spawn_playbook = None
         try:
             spawn_playbook = self.opts.build_groups[group]["spawn_playbook"]
-            os.path.exists(spawn_playbook)
         except KeyError:
             msg = "Config missing spawn playbook for group: {}".format(group)
             self.log(msg)
-            raise CoprWorkerSpawnFailError(msg)
-        except OSError:
-            msg = "Spawn playbook {} is missing".format(spawn_playbook)
-            self.log(msg)
-            raise CoprWorkerSpawnFailError(msg)
+            raise CoprSpawnFailError(msg)
 
         if spawn_playbook is None:
             msg = "Missing spawn playbook for group: {} for unknown reason".format(group)
-            raise CoprWorkerSpawnFailError(msg)
+            raise CoprSpawnFailError(msg)
+
+        if not os.path.exists(spawn_playbook):
+            msg = "Spawn playbook {} is missing".format(spawn_playbook)
+            self.log(msg)
+            raise CoprSpawnFailError(msg)
 
         proc = Process(target=do_spawn_and_publish,
                        args=(self.opts, self.events, spawn_playbook, group))

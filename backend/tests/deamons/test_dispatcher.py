@@ -13,7 +13,7 @@ import time
 import six
 
 from backend.constants import BuildStatus
-from backend.exceptions import CoprWorkerError, CoprWorkerSpawnFailError, MockRemoteError
+from backend.exceptions import CoprWorkerError, CoprSpawnFailError, MockRemoteError
 from backend.job import BuildJob
 
 if six.PY3:
@@ -171,121 +171,121 @@ class TestDispatcher(object):
             handle.write("done")
         assert Worker.pkg_built_before(self.pkg_path, self.CHROOT, self.tmp_dir_path)
 
-    def test_spawn_instance_with_check(self, init_worker):
-        self.worker.spawn_instance = MagicMock()
-
-        self.worker.spawn_instance.side_effect = self.set_ip
-
-        self.worker.spawn_instance_with_check()
-        assert self.vm_ip == self.worker.vm_ip
-
-    def test_spawn_instance_with_check_no_ip(self, init_worker):
-        self.worker.spawn_instance = MagicMock()
-
-        with pytest.raises(CoprWorkerError):
-            self.worker.spawn_instance_with_check()
-
-    def test_spawn_instance_with_check_ansible_error_reraised(self, init_worker, mc_register_build_result):
-        self.worker.spawn_instance = MagicMock()
-        self.worker.spawn_instance.side_effect = AnsibleError("foobar")
-
-        # with pytest.raises():
-        with pytest.raises(AnsibleError):
-            self.worker.spawn_instance_with_check()
-
-    def test_spawn_instance_missing_playbook_for_group_id(self, init_worker):
-        self.worker.try_spawn = MagicMock()
-        self.worker.validate_vm = MagicMock()
-        self.worker.group_id = "175"
-
-        self.worker.spawn_instance()
-        assert self.worker.vm_ip is None
-        assert not self.worker.try_spawn.called
-        assert not self.worker.validate_vm.called
-
-    def test_spawn_instance_ok_immediately(self, init_worker):
-        self.worker.try_spawn = MagicMock()
-        self.worker.try_spawn.return_value = self.vm_ip
-        self.worker.validate_vm = MagicMock()
-
-        self.worker.spawn_instance()
-        assert self.worker.vm_ip == self.vm_ip
-        assert self.worker.try_spawn.called
-        assert self.worker.validate_vm.called
-
-    def test_spawn_instance_error_once_try_spawn(self, init_worker):
-        self.worker.try_spawn = MagicMock()
-        self.worker.try_spawn.side_effect = [
-            CoprWorkerSpawnFailError("foobar"),
-            self.vm_ip
-        ]
-        self.worker.validate_vm = MagicMock()
-
-        self.worker.spawn_instance()
-        assert self.worker.vm_ip == self.vm_ip
-
-        assert len(self.worker.try_spawn.call_args_list) == 2
-        assert len(self.worker.validate_vm.call_args_list) == 1
-
-    def test_spawn_instance_error_once_validate_new_vm(self, init_worker, mc_run_ans):
-        self.worker.try_spawn = MagicMock()
-        self.worker.try_spawn.return_value = self.vm_ip
-        self.worker.validate_vm = MagicMock()
-        self.worker.validate_vm.side_effect = [
-            CoprWorkerSpawnFailError("foobar"),
-            None,
-        ]
-
-        self.worker.spawn_instance()
-        assert self.worker.vm_ip == self.vm_ip
-
-        assert len(self.worker.try_spawn.call_args_list) == 2
-        assert len(self.worker.validate_vm.call_args_list) == 2
-
-    def test_spawn_instance_ok_immediately_passed_args(self, init_worker):
-        self.worker.try_spawn = MagicMock()
-        self.worker.try_spawn.return_value = self.vm_ip
-        self.worker.validate_vm = MagicMock()
-
-        self.worker.spawn_instance()
-
-        assert self.worker.try_spawn.called
-        assert self.worker.validate_vm.called
-
-        assert self.worker.try_spawn.call_args == mock.call(self.try_spawn_args)
-
-    def test_try_spawn_ansible_error_no_result(self, init_worker, mc_run_ans):
-        # mc_run_ans = MagicMock()
-        # self.worker.run_ansible_playbook = mc_run_ans
-        mc_run_ans.return_value = None
-
-        with pytest.raises(CoprWorkerSpawnFailError):
-            self.worker.try_spawn(self.try_spawn_args)
-
-    def test_try_spawn_ansible_ok_no_vm_name(self, init_worker, mc_run_ans):
-        # mc_run_ans = MagicMock()
-        # self.worker.run_ansible_playbook = mc_run_ans
-        mc_run_ans.return_value = "foobar IP={}".format(self.vm_ip)
-
-        assert self.worker.try_spawn(self.try_spawn_args) == self.vm_ip
-
-    def test_try_spawn_ansible_ok_with_vm_name(self, init_worker, mc_run_ans):
-        # mc_run_ans = MagicMock()
-        # self.worker.run_ansible_playbook = mc_run_ans
-        mc_run_ans.return_value = "foobar \"IP={}\" adsf \"vm_name={}\"".format(
-            self.vm_ip, self.vm_name)
-
-        assert self.worker.try_spawn(self.try_spawn_args) == self.vm_ip
-        assert self.worker.vm_name == self.vm_name
-
-    def test_try_spawn_ansible_bad_ip_no_vm_name(self, init_worker, mc_run_ans):
-        # mc_run_ans = MagicMock()
-        # self.worker.run_ansible_playbook = mc_run_ans
-        for bad_ip in ["256.0.0.2", "not-an-ip", "example.com", ""]:
-            mc_run_ans.return_value = "foobar IP={}".format(bad_ip)
-
-            with pytest.raises(CoprWorkerSpawnFailError):
-                self.worker.try_spawn(self.try_spawn_args)
+    # def test_spawn_instance_with_check(self, init_worker):
+    #     self.worker.spawn_instance = MagicMock()
+    #
+    #     self.worker.spawn_instance.side_effect = self.set_ip
+    #
+    #     self.worker.spawn_instance_with_check()
+    #     assert self.vm_ip == self.worker.vm_ip
+    #
+    # def test_spawn_instance_with_check_no_ip(self, init_worker):
+    #     self.worker.spawn_instance = MagicMock()
+    #
+    #     with pytest.raises(CoprWorkerError):
+    #         self.worker.spawn_instance_with_check()
+    #
+    # def test_spawn_instance_with_check_ansible_error_reraised(self, init_worker, mc_register_build_result):
+    #     self.worker.spawn_instance = MagicMock()
+    #     self.worker.spawn_instance.side_effect = AnsibleError("foobar")
+    #
+    #     # with pytest.raises():
+    #     with pytest.raises(AnsibleError):
+    #         self.worker.spawn_instance_with_check()
+    #
+    # def test_spawn_instance_missing_playbook_for_group_id(self, init_worker):
+    #     self.worker.try_spawn = MagicMock()
+    #     self.worker.validate_vm = MagicMock()
+    #     self.worker.group_id = "175"
+    #
+    #     self.worker.spawn_instance()
+    #     assert self.worker.vm_ip is None
+    #     assert not self.worker.try_spawn.called
+    #     assert not self.worker.validate_vm.called
+    #
+    # def test_spawn_instance_ok_immediately(self, init_worker):
+    #     self.worker.try_spawn = MagicMock()
+    #     self.worker.try_spawn.return_value = self.vm_ip
+    #     self.worker.validate_vm = MagicMock()
+    #
+    #     self.worker.spawn_instance()
+    #     assert self.worker.vm_ip == self.vm_ip
+    #     assert self.worker.try_spawn.called
+    #     assert self.worker.validate_vm.called
+    #
+    # def test_spawn_instance_error_once_try_spawn(self, init_worker):
+    #     self.worker.try_spawn = MagicMock()
+    #     self.worker.try_spawn.side_effect = [
+    #         CoprSpawnFailError("foobar"),
+    #         self.vm_ip
+    #     ]
+    #     self.worker.validate_vm = MagicMock()
+    #
+    #     self.worker.spawn_instance()
+    #     assert self.worker.vm_ip == self.vm_ip
+    #
+    #     assert len(self.worker.try_spawn.call_args_list) == 2
+    #     assert len(self.worker.validate_vm.call_args_list) == 1
+    #
+    # def test_spawn_instance_error_once_validate_new_vm(self, init_worker, mc_run_ans):
+    #     self.worker.try_spawn = MagicMock()
+    #     self.worker.try_spawn.return_value = self.vm_ip
+    #     self.worker.validate_vm = MagicMock()
+    #     self.worker.validate_vm.side_effect = [
+    #         CoprSpawnFailError("foobar"),
+    #         None,
+    #     ]
+    #
+    #     self.worker.spawn_instance()
+    #     assert self.worker.vm_ip == self.vm_ip
+    #
+    #     assert len(self.worker.try_spawn.call_args_list) == 2
+    #     assert len(self.worker.validate_vm.call_args_list) == 2
+    #
+    # def test_spawn_instance_ok_immediately_passed_args(self, init_worker):
+    #     self.worker.try_spawn = MagicMock()
+    #     self.worker.try_spawn.return_value = self.vm_ip
+    #     self.worker.validate_vm = MagicMock()
+    #
+    #     self.worker.spawn_instance()
+    #
+    #     assert self.worker.try_spawn.called
+    #     assert self.worker.validate_vm.called
+    #
+    #     assert self.worker.try_spawn.call_args == mock.call(self.try_spawn_args)
+    #
+    # def test_try_spawn_ansible_error_no_result(self, init_worker, mc_run_ans):
+    #     # mc_run_ans = MagicMock()
+    #     # self.worker.run_ansible_playbook = mc_run_ans
+    #     mc_run_ans.return_value = None
+    #
+    #     with pytest.raises(CoprSpawnFailError):
+    #         self.worker.try_spawn(self.try_spawn_args)
+    #
+    # def test_try_spawn_ansible_ok_no_vm_name(self, init_worker, mc_run_ans):
+    #     # mc_run_ans = MagicMock()
+    #     # self.worker.run_ansible_playbook = mc_run_ans
+    #     mc_run_ans.return_value = "foobar IP={}".format(self.vm_ip)
+    #
+    #     assert self.worker.try_spawn(self.try_spawn_args) == self.vm_ip
+    #
+    # def test_try_spawn_ansible_ok_with_vm_name(self, init_worker, mc_run_ans):
+    #     # mc_run_ans = MagicMock()
+    #     # self.worker.run_ansible_playbook = mc_run_ans
+    #     mc_run_ans.return_value = "foobar \"IP={}\" adsf \"vm_name={}\"".format(
+    #         self.vm_ip, self.vm_name)
+    #
+    #     assert self.worker.try_spawn(self.try_spawn_args) == self.vm_ip
+    #     assert self.worker.vm_name == self.vm_name
+    #
+    # def test_try_spawn_ansible_bad_ip_no_vm_name(self, init_worker, mc_run_ans):
+    #     # mc_run_ans = MagicMock()
+    #     # self.worker.run_ansible_playbook = mc_run_ans
+    #     for bad_ip in ["256.0.0.2", "not-an-ip", "example.com", ""]:
+    #         mc_run_ans.return_value = "foobar IP={}".format(bad_ip)
+    #
+    #         with pytest.raises(CoprSpawnFailError):
+    #             self.worker.try_spawn(self.try_spawn_args)
 
     @mock.patch("backend.daemons.dispatcher.ansible.runner.Runner")
     def test_validate_new_vm(self, mc_runner, init_worker, reg_vm):
@@ -302,7 +302,7 @@ class TestDispatcher(object):
         mc_ans_conn.run.side_effect = IOError()
         mc_runner.return_value = mc_ans_conn
 
-        with pytest.raises(CoprWorkerSpawnFailError):
+        with pytest.raises(CoprSpawnFailError):
             self.worker.validate_vm()
         assert mc_ans_conn.run.called
 
@@ -312,7 +312,7 @@ class TestDispatcher(object):
         mc_ans_conn.run.return_value = {"contacted": {}}
         mc_runner.return_value = mc_ans_conn
 
-        with pytest.raises(CoprWorkerSpawnFailError):
+        with pytest.raises(CoprSpawnFailError):
             self.worker.validate_vm()
         assert mc_ans_conn.run.called
 
@@ -777,7 +777,7 @@ class TestDispatcher(object):
 
     def test_check_vm_still_alive_not_ok(self, init_worker, reg_vm):
         self.worker.validate_vm = MagicMock()
-        self.worker.validate_vm.side_effect = CoprWorkerSpawnFailError("foobar")
+        self.worker.validate_vm.side_effect = CoprSpawnFailError("foobar")
         self.worker.terminate_instance = MagicMock()
 
         self.worker.check_vm_still_alive()

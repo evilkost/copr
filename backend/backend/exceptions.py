@@ -123,7 +123,7 @@ class CoprWorkerError(CoprBackendError):
     pass
 
 
-class CoprWorkerSpawnFailError(CoprWorkerError):
+class CoprSpawnFailError(CoprBackendError):
     pass
 
 

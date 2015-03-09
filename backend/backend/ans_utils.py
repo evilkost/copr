@@ -4,7 +4,7 @@ import subprocess
 from subprocess import CalledProcessError
 import sys
 import time
-from backend.exceptions import CoprWorkerSpawnFailError
+from backend.exceptions import CoprSpawnFailError
 
 ansible_playbook_bin = "ansible-playbook"
 

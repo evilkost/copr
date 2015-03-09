@@ -7,7 +7,7 @@ import time
 from multiprocessing import Process
 import sys
 from backend.ans_utils import ans_extra_vars_encode, run_ansible_playbook, run_ansible_playbook_once
-from backend.exceptions import CoprWorkerSpawnFailError
+from backend.exceptions import CoprSpawnFailError
 from backend.helpers import format_tb, get_redis_connection
 from backend.vm_manage import EventTopics, PUBSUB_MB
 from backend.vm_manage.executor import Executor
@@ -75,11 +75,11 @@ class Terminator(Executor):
         except KeyError:
             msg = "Config missing termination playbook for group: {}".format(group)
             self.log(msg)
-            raise CoprWorkerSpawnFailError(msg)
+            raise CoprSpawnFailError(msg)
         except OSError:
             msg = "Termination playbook {} is missing".format(terminate_playbook)
             self.log(msg)
-            raise CoprWorkerSpawnFailError(msg)
+            raise CoprSpawnFailError(msg)
 
         self.log("received VM ip: {}, name: {} for termination".format(vm_ip, vm_name))
         proc = Process(target=terminate_vm, args=(self.opts, self.events,

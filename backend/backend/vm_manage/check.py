@@ -14,7 +14,7 @@ from backend.helpers import get_redis_connection, format_tb
 from backend.vm_manage import PUBSUB_MB, EventTopics
 from backend.vm_manage.executor import Executor
 
-from ..exceptions import MockRemoteError, CoprWorkerError, CoprWorkerSpawnFailError
+from ..exceptions import MockRemoteError, CoprWorkerError, CoprSpawnFailError
 
 
 def check_health(opts, events, vm_name, vm_ip):

@@ -60,6 +60,7 @@ else
 end
 """.format(VmStates.CHECK_HEALTH_FAILED)
 
+
 class EventHandler(Process):
 
     def __init__(self, vmm):
@@ -109,7 +110,7 @@ class EventHandler(Process):
             if too_much_fails and terminable_state:
                 self.vmm.log("check fail threshold reached: {}, terminating: {}"
                              .format(check_fails_count, msg), who="on_health_check_result")
-                self.vmm.terminate_vm(vmd.vm_name)
+                self.vmm.start_vm_termination(vmd.vm_name)
     
     def on_vm_spawned(self, msg):
         self.vmm.add_vm_to_pool(vm_ip=msg["vm_ip"], vm_name=msg["vm_name"], group=msg["group"])

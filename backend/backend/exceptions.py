@@ -128,8 +128,15 @@ class CoprSpawnFailError(CoprBackendError):
 
 
 class VmError(CoprBackendError):
+    """
+    Error related to VM manage
+    """
     pass
 
 
 class VmDescriptorNotFound(VmError):
+    pass
+
+
+class NoVmAvailable(VmError):
     pass

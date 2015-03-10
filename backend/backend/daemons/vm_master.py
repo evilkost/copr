@@ -49,7 +49,7 @@ class VmMaster(Process):
                 if not_re_acquired_in > Thresholds.dirty_vm_terminating_timeout:
                     self.log("dirty VM `{}` not re-acquired in {}, terminating it"
                              .format(vmd.vm_name, not_re_acquired_in))
-                    self.vmm.terminate_vm(vmd.vm_name, allowed_pre_state=VmStates.READY)
+                    self.vmm.start_vm_termination(vmd.vm_name, allowed_pre_state=VmStates.READY)
 
     def remove_vm_with_dead_builder(self):
         # check that process who acquired VMD stil exists, othrewise release VM
@@ -63,31 +63,22 @@ class VmMaster(Process):
                 pid = int(pid)
                 if not psutil.pid_exists(pid) or vmd.vm_name not in psutil.Process(pid).name:
                     self.log("Process `{}` not exists anymore, releasing VM: {} ".format(pid, str(vmd)))
-                    self.vmm.release_vm(vmd.vm_name)
+                    if self.vmm.release_vm(vmd.vm_name):
+                        vmd_dict = vmd.to_dict()
+                        if all(x in vmd_dict for x in ["build_id", "task_id", "chroot"]):
+                            request = {
+                                "action": "reschedule",
+                                "build_id": vmd.build_id,
+                                "task_id": vmd.task_id,
+                                "chroot": vmd.chroot,
+                            }
 
-                    vmd_dict = vmd.to_dict()
-                    if all(x in vmd_dict for x in ["build_id", "task_id", "chroot"]):
-                        request = {
-                            "action": "reschedule",
-                            "build_id": vmd.build_id,
-                            "task_id": vmd.task_id,
-                            "chroot": vmd.chroot,
-                        }
-
-                        self.vmm.rc.publish(JOB_GRAB_TASK_END_PUBSUB, json.dumps(request))
+                            self.vmm.rc.publish(JOB_GRAB_TASK_END_PUBSUB, json.dumps(request))
 
     def check_vms_health(self):
         # for machines in state ready and time.time() - vm.last_health_check > threshold_health_check_period
         states_to_check = [VmStates.CHECK_HEALTH_FAILED, VmStates.READY,
                            VmStates.GOT_IP, VmStates.IN_USE]
-        # vmd_list = [
-        #     vmd for vmd
-        #     in self.vmm.get_all_vm()
-        #     if vmd.state in states_to_check
-        # ]
-        # # for group in self.vmm.vm_groups:
-        # #     sub_list = self.vmm.get_all_vm_in_group(group)
-        # #     vmd_list.extend(vmd for vmd in sub_list if vmd.state in states_to_check)
 
         for vmd in self.vmm.get_all_vm():
             if vmd.state not in states_to_check:
@@ -98,7 +89,7 @@ class VmMaster(Process):
                 since_last_check = time.time() - float(last_health_check)
                 if since_last_check < Thresholds.health_check_period:
                     continue
-            self.vmm.do_vm_check(vmd.vm_name)
+            self.vmm.start_vm_check(vmd.vm_name)
 
     def start_spawn_if_required(self):
         for group in range(self.opts.build_groups_count):
@@ -146,6 +137,8 @@ class VmMaster(Process):
 
     def do_cycle(self):
         self.log("starting do_cycle")
+        # TOOD: start_vm_check could potentially produce vmd with check state in case of server crash
+        # so we need to restart check for VMD with health_check state + old age `last_health_check`
 
         # TODO: each check should be executed in threads ... and finish with join?
         # self.terminate_abandoned_vms()
@@ -157,6 +150,8 @@ class VmMaster(Process):
         self.vmm.checker.recycle()
         self.vmm.spawner.recycle()
         # self.vmm.terminator.recycle()
+
+        # todo: self.terminate_old_unchecked_vms()
 
     def run(self):
         if self.vmm.spawner is None or self.vmm.terminator is None or self.vmm.checker is None:

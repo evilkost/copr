@@ -1,4 +1,5 @@
 # coding: utf-8
+import json
 
 import types
 import time
@@ -8,9 +9,11 @@ from bunch import Bunch
 import six
 
 from backend import exceptions
-from backend.vm_manage import VmStates, KEY_VM_POOL, PUBSUB_VM_TERMINATION
+from backend.exceptions import VmError, NoVmAvailable
+from backend.vm_manage import VmStates, KEY_VM_POOL, PUBSUB_VM_TERMINATION, PUBSUB_MB, EventTopics
 from backend.vm_manage.manager import VmManager
 from backend.daemons.vm_master import VmMaster
+from backend.helpers import get_redis_connection
 
 
 if six.PY3:
@@ -45,8 +48,34 @@ class TestManager(object):
             redis_db=9,
             ssh=Bunch(
                 transport="ssh"
-            )
+            ),
+            build_groups_count=1,
+            build_groups={
+                0: {
+                    "name": "base",
+                    "archs": ["i386", "x86_64"]
+                }
+            },
+
+            fedmsg_enabled=False,
+            sleeptime=0.1,
+            do_sign=True,
+            # worker_logdir=self.,
+            timeout=1800,
+            # destdir=self.tmp_dir_path,
+            results_baseurl="/tmp",
         )
+        self.queue = Queue()
+
+        self.vm_ip = "127.0.0.1"
+        self.vm_name = "localhost"
+        self.group = 0
+        self.username = "bob"
+
+        self.rc = get_redis_connection(self.opts)
+        self.ps = None
+        self.log_msg_list = []
+
         self.callback = TestCallback()
         # checker = HealthChecker(self.opts, self.callback)
         self.checker = MagicMock()
@@ -54,173 +83,220 @@ class TestManager(object):
         self.terminator = MagicMock()
 
         self.queue = Queue()
-        self.test_vmm = VmManager(self.opts, self.queue,
-                                         checker=self.checker,
-                                         spawner=self.spawner,
-                                         terminator=self.terminator)
-        self.test_vmm.post_init()
-
-        self.vm_daemon = VmMaster(self.test_vmm)
-
-        self.vm_ip = "127.0.0.1"
-        self.vm_name = "localhost"
-        self.group = "x86"
-        self.username = "bob"
+        self.vmm = VmManager(self.opts, self.queue,
+                             checker=self.checker,
+                             spawner=self.spawner,
+                             terminator=self.terminator)
+        self.vmm.post_init()
+        self.pid = 12345
 
     def teardown_method(self, method):
-        keys = self.test_vmm.rc.keys("*")
+        keys = self.vmm.rc.keys("*")
         if keys:
-            self.test_vmm.rc.delete(*keys)
-    #
-    # def test_add_vm_to_pool(self):
-    #     self.test_vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
-    #
-    #     vm_list = self.test_vmm.get_all_vm_in_group(self.group)
-    #
-    #     vm = self.test_vmm.get_vm_by_name(self.vm_name)
-    #     assert len(vm_list) == 1
-    #     assert vm_list[0].__dict__ == vm.__dict__
-    #     assert self.group in self.test_vmm.vm_groups
-    #     assert len(self.test_vmm.vm_groups) == 1
-    #
-    #     with pytest.raises(Exception):
-    #         self.test_vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
-    #
-    # def test_check_vm(self, capsys):
-    #     self.checker.check_health.return_value = None
-    #
-    #     self.test_vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
-    #     self.test_vmm.do_vm_check(self.vm_name)
-    #     vmd = self.test_vmm.get_vm_by_name(self.vm_name)
-    #     assert vmd.get_field(self.test_vmm.rc, "state") == VmStates.READY
-    #
-    #     self.test_vmm.do_vm_check(self.vm_name)
-    #     assert vmd.get_field(self.test_vmm.rc, "state") == VmStates.READY
-    #
-    #     vmd.store_field(self.test_vmm.rc, "bound_to_user", "bob")
-    #     self.test_vmm.do_vm_check(self.vm_name)
-    #     assert vmd.get_field(self.test_vmm.rc, "state") == VmStates.READY
-    #
-    #     self.checker.check_health.side_effect = exceptions.BuilderTimeOutError("foobar")
-    #     # with pytest.raises(Exception):
-    #     self.test_vmm.terminate_vm = types.MethodType(MagicMock(), self.test_vmm)
-    #     self.test_vmm.do_vm_check(self.vm_name)
-    #     assert self.test_vmm.terminate_vm.called
-    #
-    #     vmd.store_field(self.test_vmm.rc, "state", VmStates.IN_USE)
-    #     # should ignore
-    #     self.test_vmm.do_vm_check(self.vm_name)
-    #
-    #     out, err = capsys.readouterr()
-    #
-    # def test_acquire_vm(self):
-    #     self.test_vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
-    #     self.test_vmm.add_vm_to_pool(self.vm_ip, "alternative", self.group)
-    #     self.test_vmm.do_vm_check(self.vm_name)
-    #     self.test_vmm.do_vm_check("alternative")
-    #     self.test_vmm.get_vm_by_name("alternative").store_field(self.test_vmm.rc, "bound_to_user", self.username)
-    #
-    #     vmd_got_first = self.test_vmm.acquire_vm(group=self.group, username=self.username)
-    #     assert vmd_got_first.vm_name == "alternative"
-    #     vmd_got_second = self.test_vmm.acquire_vm(group=self.group, username=self.username)
-    #     assert vmd_got_second.vm_name == self.vm_name
-    #
-    #     with pytest.raises(Exception):
-    #         self.test_vmm.acquire_vm(group=self.group, username=self.username)
-    #
-    # def test_acquire_only_ready_state(self):
-    #     self.test_vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
-    #     for state in [VmStates.IN_USE, VmStates.GOT_IP, VmStates.CHECK_HEALH,
-    #                   VmStates.TERMINATING, VmStates.TERMINATED]:
-    #         self.test_vmm.get_vm_by_name(self.vm_name).store_field(self.test_vmm.rc, "state", state)
-    #         with pytest.raises(Exception):
-    #             self.test_vmm.acquire_vm(group=self.group, username=self.username)
-    #
-    # def test_acquire_and_release_vm(self):
-    #     self.test_vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
-    #     self.test_vmm.add_vm_to_pool(self.vm_ip, "alternative", self.group)
-    #     self.test_vmm.do_vm_check(self.vm_name)
-    #     self.test_vmm.do_vm_check("alternative")
-    #     self.test_vmm.get_vm_by_name("alternative").store_field(self.test_vmm.rc, "bound_to_user", self.username)
-    #
-    #     vmd_got_first = self.test_vmm.acquire_vm(group=self.group, username=self.username)
-    #     assert vmd_got_first.vm_name == "alternative"
-    #
-    #     self.test_vmm.release_vm("alternative")
-    #     vmd_got_second = self.test_vmm.acquire_vm(group=self.group, username=self.username)
-    #     assert vmd_got_second.vm_name == "alternative"
-    #
-    #
-    # def test_remove_vm_from_pool_only_terminated(self):
-    #     self.test_vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
-    #     for state in [VmStates.IN_USE, VmStates.GOT_IP, VmStates.CHECK_HEALH, VmStates.READY, VmStates.TERMINATING]:
-    #         self.test_vmm.get_vm_by_name(self.vm_name).store_field(self.test_vmm.rc, "state", state)
-    #         with pytest.raises(Exception):
-    #             self.test_vmm.remove_vm_from_pool(self.vm_name)
-    #     self.test_vmm.get_vm_by_name(self.vm_name).store_field(self.test_vmm.rc, "state", VmStates.TERMINATED)
-    #     self.test_vmm.remove_vm_from_pool(self.vm_name)
-    #
-    #     with pytest.raises(Exception):
-    #         self.test_vmm.get_vm_by_name(self.vm_name)
-    #
-    #     assert self.test_vmm.rc.scard(KEY_VM_POOL.format(group=self.group)) == 0
-    #
-    # def test_terminate(self, capsys):
-    #     my_remove = self.test_vmm.remove_vm_from_pool
-    #     self.test_vmm.remove_vm_from_pool = types.MethodType(MagicMock(), self.test_vmm)
-    #     self.test_vmm.terminator = self.terminator
-    #     for state in [VmStates.IN_USE, VmStates.GOT_IP, VmStates.CHECK_HEALH, VmStates.READY, VmStates.TERMINATING]:
-    #         self.test_vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
-    #         self.test_vmm.get_vm_by_name(self.vm_name).store_field(self.test_vmm.rc, "state", state)
-    #
-    #         self.test_vmm.terminate_vm(self.vm_name)
-    #         self.test_vmm.get_vm_by_name(self.vm_name).get_field(self.test_vmm.rc, "state") == VmStates.TERMINATING
-    #         my_remove(self.vm_name)
-    #
-    #     self.test_vmm.remove_vm_from_pool.reset_mock()
-    #     assert not self.test_vmm.remove_vm_from_pool.called
-    #     self.terminator.terminate.side_effect = Exception("foobar")
-    #     self.test_vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
-    #     self.test_vmm.get_vm_by_name(self.vm_name).store_field(self.test_vmm.rc, "state", VmStates.READY)
-    #     self.test_vmm.terminate_vm(self.vm_name)
-    #     assert not self.test_vmm.remove_vm_from_pool.called
-    #
-    #     capsys.readouterr()
-    #
-    # def test_terminate_publish(self):
-    #     self.test_vmm.terminator = self.terminator
-    #     self.test_vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
-    #
-    #     ps = self.test_vmm.rc.pubsub(ignore_subscribe_messages=True)
-    #     ps.subscribe(PUBSUB_VM_TERMINATION.format(vm_name=self.vm_name))
-    #     while True:
-    #         if ps.get_message() is None:
-    #             break
-    #
-    #     assert ps.get_message() is None
-    #     self.test_vmm.terminate_vm(self.vm_name)
-    #     time.sleep(0.2)
-    #     msg = None
-    #     while msg is None:
-    #         msg = ps.get_message()
-    #         time.sleep(0.1)
-    #
-    #     assert ps.get_message() is None
-    #     assert msg["data"] == VmStates.TERMINATING
-    #     assert msg["type"] == "message"
+            self.vmm.rc.delete(*keys)
 
-    # def test_register_spawned_vms(self):
-    #     self.vm_daemon.subscribe_pubsub_channels()
-    #     time.sleep(0.001)
-    #
-    #     spawned_dict = {"vm_name": self.vm_name, "ip": self.vm_ip, "group": self.group}
-    #     self.test_vmm.rc.publish(PUBSUB_SPAWNER, json.dumps(spawned_dict))
-    #
-    #     time.sleep(0.2)
-    #     self.vm_daemon.register_spawned_vms()
-    #     self.vm_daemon.register_spawned_vms()
-    #
-    #     vmd = self.test_vmm.get_vm_by_name(self.vm_name)
-    #     assert vmd.vm_ip == self.vm_ip
-    #     assert vmd.state == VmStates.GOT_IP
-        # print("XXX>{}<".format(vmd))
+    @pytest.fixture
+    def f_second_group(self):
+        self.opts.build_groups_count = 2
+        self.opts.build_groups[1] = {
+            "name": "arm",
+            "archs": ["armV7",]
+        }
+
+    def test_add_vm_to_pool(self):
+        self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
+
+        vm_list = self.vmm.get_all_vm_in_group(self.group)
+
+        vm = self.vmm.get_vm_by_name(self.vm_name)
+        assert len(vm_list) == 1
+        assert vm_list[0].__dict__ == vm.__dict__
+        assert self.group in self.vmm.vm_groups
+        assert len(self.vmm.vm_groups) == 1
+
+        with pytest.raises(VmError):
+            self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
+
+    def test_start_vm_check_ok_ok(self):
+        self.vmm.start_vm_termination = types.MethodType(MagicMock(), self.vmm)
+        self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
+        vmd = self.vmm.get_vm_by_name(self.vm_name)
+        # can start, no problem to start
+        # > can start IN_USE, don't change status
+        vmd.store_field(self.rc, "state", VmStates.IN_USE)
+        self.vmm.start_vm_check(vm_name=self.vm_name)
+
+        assert self.checker.run_check_health.called
+        self.checker.run_check_health.reset_mock()
+        assert vmd.get_field(self.rc, "state") == VmStates.IN_USE
+
+        # > changes status to HEALTH_CHECK
+        states = [VmStates.GOT_IP, VmStates.CHECK_HEALTH_FAILED, VmStates.READY]
+        for state in states:
+            vmd.store_field(self.rc, "state", state)
+            self.vmm.start_vm_check(vm_name=self.vm_name)
+
+            assert self.checker.run_check_health.called
+            self.checker.run_check_health.reset_mock()
+            assert vmd.get_field(self.rc, "state") == VmStates.CHECK_HEALTH
+
+    def test_start_vm_check_wrong_old_state(self):
+        self.vmm.start_vm_termination = types.MethodType(MagicMock(), self.vmm)
+        self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
+        vmd = self.vmm.get_vm_by_name(self.vm_name)
+
+        states = [VmStates.TERMINATING, VmStates.CHECK_HEALTH]
+        for state in states:
+            vmd.store_field(self.rc, "state", state)
+            assert not self.vmm.start_vm_check(vm_name=self.vm_name)
+
+            assert not self.checker.run_check_health.called
+            assert vmd.get_field(self.rc, "state") == state
+
+    def test_start_vm_check_lua_ok_check_spawn_failed(self):
+        self.vmm.start_vm_termination = types.MethodType(MagicMock(), self.vmm)
+        self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
+        vmd = self.vmm.get_vm_by_name(self.vm_name)
+
+        self.vmm.checker.run_check_health.side_effect = RuntimeError()
+
+        # restore orig state
+        states = [VmStates.GOT_IP, VmStates.CHECK_HEALTH_FAILED, VmStates.READY, VmStates.IN_USE]
+        for state in states:
+            vmd.store_field(self.rc, "state", state)
+            self.vmm.start_vm_check(vm_name=self.vm_name)
+
+            assert self.checker.run_check_health.called
+            self.checker.run_check_health.reset_mock()
+            assert vmd.get_field(self.rc, "state") == state
+
+    def test_acquire_vm(self):
+        vmd_main = self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
+        vmd_alt = self.vmm.add_vm_to_pool(self.vm_ip, "alternative", self.group)
+
+        vmd_main.store_field(self.rc, "state", VmStates.READY)
+        vmd_alt.store_field(self.rc, "state", VmStates.READY)
+        vmd_alt.store_field(self.vmm.rc, "bound_to_user", self.username)
+
+        vmd_got_first = self.vmm.acquire_vm(group=self.group, username=self.username, pid=self.pid)
+        assert vmd_got_first.vm_name == "alternative"
+        vmd_got_second = self.vmm.acquire_vm(group=self.group, username=self.username, pid=self.pid)
+        assert vmd_got_second.vm_name == self.vm_name
+
+        with pytest.raises(NoVmAvailable):
+            self.vmm.acquire_vm(group=self.group, username=self.username, pid=self.pid)
+
+    def test_acquire_only_ready_state(self):
+        vmd_main = self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
+
+        for state in [VmStates.IN_USE, VmStates.GOT_IP, VmStates.CHECK_HEALTH,
+                      VmStates.TERMINATING, VmStates.CHECK_HEALTH_FAILED]:
+            vmd_main.store_field(self.rc, "state", state)
+            with pytest.raises(NoVmAvailable):
+                self.vmm.acquire_vm(group=self.group, username=self.username, pid=self.pid)
+
+    def test_acquire_and_release_vm(self):
+        vmd_main = self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
+        vmd_alt = self.vmm.add_vm_to_pool(self.vm_ip, "alternative", self.group)
+
+        vmd_main.store_field(self.rc, "state", VmStates.READY)
+        vmd_alt.store_field(self.rc, "state", VmStates.READY)
+        vmd_alt.store_field(self.vmm.rc, "bound_to_user", self.username)
+
+        vmd_got_first = self.vmm.acquire_vm(group=self.group, username=self.username, pid=self.pid)
+        assert vmd_got_first.vm_name == "alternative"
+
+        self.vmm.release_vm("alternative")
+        vmd_got_again = self.vmm.acquire_vm(group=self.group, username=self.username, pid=self.pid)
+        assert vmd_got_again.vm_name == "alternative"
+
+        vmd_got_another = self.vmm.acquire_vm(group=self.group, username=self.username, pid=self.pid)
+        assert vmd_got_another.vm_name == self.vm_name
+
+    def test_release_only_in_use(self):
+        vmd = self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
+
+        for state in [VmStates.READY, VmStates.GOT_IP, VmStates.CHECK_HEALTH,
+                      VmStates.TERMINATING, VmStates.CHECK_HEALTH_FAILED]:
+            vmd.store_field(self.rc, "state", state)
+
+            assert not self.vmm.release_vm(self.vm_name)
+
+    def rcv_from_ps_message_bus(self):
+        # don't forget to subscribe self.ps
+        rcv_msg_list = []
+        for i in range(10):
+            msg = self.ps.get_message()
+            if msg:
+                rcv_msg_list.append(msg)
+            time.sleep(0.01)
+        return rcv_msg_list
+
+    def test_start_vm_termination(self):
+        self.ps = self.vmm.rc.pubsub(ignore_subscribe_messages=True)
+        self.ps.subscribe(PUBSUB_MB)
+        self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
+
+        self.vmm.start_vm_termination(self.vm_name)
+        rcv_msg_list = self.rcv_from_ps_message_bus()
+        # print(rcv_msg_list)
+        assert len(rcv_msg_list) == 1
+        msg = rcv_msg_list[0]
+        assert msg["type"] == "message"
+        data = json.loads(msg["data"])
+        assert data["topic"] == EventTopics.VM_TERMINATION_REQUEST
+        assert data["vm_name"] == self.vm_name
+
+    def test_start_vm_termination_fail(self):
+        self.ps = self.vmm.rc.pubsub(ignore_subscribe_messages=True)
+        self.ps.subscribe(PUBSUB_MB)
+        vmd = self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
+        vmd.store_field(self.rc, "state", VmStates.TERMINATING)
+
+        self.vmm.start_vm_termination(self.vm_name)
+        rcv_msg_list = self.rcv_from_ps_message_bus()
+        assert len(rcv_msg_list) == 0
+
+        vmd.store_field(self.rc, "state", VmStates.READY)
+        self.vmm.start_vm_termination(self.vm_name, allowed_pre_state=VmStates.IN_USE)
+        rcv_msg_list = self.rcv_from_ps_message_bus()
+        assert len(rcv_msg_list) == 0
+        assert vmd.get_field(self.rc, "state") == VmStates.READY
+
+    def test_remove_vm_from_pool_only_terminated(self):
+        vmd = self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
+        for state in [VmStates.IN_USE, VmStates.GOT_IP, VmStates.CHECK_HEALTH,
+                      VmStates.READY, VmStates.CHECK_HEALTH_FAILED]:
+
+            vmd.store_field(self.vmm.rc, "state", state)
+            with pytest.raises(VmError):
+                self.vmm.remove_vm_from_pool(self.vm_name)
+
+        vmd.store_field(self.vmm.rc, "state", VmStates.TERMINATING)
+        self.vmm.remove_vm_from_pool(self.vm_name)
+        assert self.vmm.rc.scard(KEY_VM_POOL.format(group=self.group)) == 0
+
+    def test_get_vms(self, f_second_group, capsys):
+        vmd_1 = self.vmm.add_vm_to_pool(self.vm_ip, "a1", self.group)
+        vmd_2 = self.vmm.add_vm_to_pool(self.vm_ip, "a2", self.group)
+        vmd_3 = self.vmm.add_vm_to_pool(self.vm_ip, "b1", 1)
+        vmd_4 = self.vmm.add_vm_to_pool(self.vm_ip, "b2", 1)
+        vmd_5 = self.vmm.add_vm_to_pool(self.vm_ip, "b3", 1)
+
+        assert set(v.vm_name for v in self.vmm.get_all_vm_in_group(0)) == set(["a1", "a2"])
+        assert set(v.vm_name for v in self.vmm.get_all_vm_in_group(1)) == set(["b1", "b2", "b3"])
+
+        assert set(v.vm_name for v in self.vmm.get_all_vm()) == set(["a1", "a2", "b1", "b2", "b3"])
+
+        vmd_1.store_field(self.rc, "state", VmStates.GOT_IP)
+        vmd_2.store_field(self.rc, "state", VmStates.GOT_IP)
+        vmd_3.store_field(self.rc, "state", VmStates.GOT_IP)
+        vmd_4.store_field(self.rc, "state", VmStates.READY)
+        vmd_5.store_field(self.rc, "state", VmStates.IN_USE)
+
+        vmd_list = self.vmm.get_vm_by_group_and_state_list(group=None, state_list=[VmStates.GOT_IP, VmStates.IN_USE])
+        assert set(v.vm_name for v in vmd_list) == set(["a1", "a2", "b1", "b3"])
+        vmd_list = self.vmm.get_vm_by_group_and_state_list(group=1, state_list=[VmStates.READY])
+        assert set(v.vm_name for v in vmd_list) == set(["b2"])
+
+        self.vmm.info()

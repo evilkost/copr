@@ -175,7 +175,7 @@ class TestEventHandle(object):
     def test_on_vm_termination_request(self):
         expected_call = mock.call(**self.msg)
         self.eh.on_vm_termination_request(self.msg)
-        assert self.vmm.terminator.terminate_vm.call_args == expected_call
+        assert self.vmm.terminator.start_vm_termination.call_args == expected_call
 
     def test_health_check_result_no_vmd(self):
         self.vmm.get_vm_by_name.side_effect = VmDescriptorNotFound("foobar")
@@ -264,7 +264,7 @@ class TestEventHandle(object):
         assert self.vmd.get_field(self.rc, "state") == VmStates.IN_USE
 
         assert "check fail threshold reached" in self.vmm.log.call_args_list[-1][0][0]
-        assert self.vmm.terminate_vm.called
+        assert self.vmm.start_vm_termination.called
 
     def test_health_check_result_on_wrong_states(self):
         self.vmd = VmDescriptor(self.vm_ip, self.vm_name, self.group, VmStates.GOT_IP)
@@ -329,7 +329,6 @@ class TestEventHandle(object):
         self.eh.handlers_map = MagicMock()
 
         def on_listen():
-            print("\n STAGE: {}".format(self.stage))
             if self.stage == 1:
                 assert self.vmm.log.called
                 assert "Spawned pubsub handler" in self.vmm.log.call_args[0][0]
@@ -379,7 +378,6 @@ class TestEventHandle(object):
                 self.eh.handlers_map.__getitem__.return_value.side_effect = IOError()  #
                 return {"type": "message", "data": json.dumps({"topic": "foobar"})}    # handler produces exception
             elif self.stage == 9:
-                # import ipdb; ipdb.set_trace()
                 assert self.eh.handlers_map.__getitem__.called
                 assert self.eh.handlers_map.__contains__.called
                 assert self.vmm.log.called

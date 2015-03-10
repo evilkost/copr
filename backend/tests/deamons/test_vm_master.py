@@ -57,7 +57,7 @@ class TestCallback(object):
         print(msg)
 
 
-class TestManager(object):
+class TestVmMaster(object):
 
     def setup_method(self, method):
         self.opts = Bunch(
@@ -96,17 +96,17 @@ class TestManager(object):
 
         mc_time_vmm.time.return_value = mc_time.time.return_value = 1
         self.test_vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
-        self.test_vmm.do_vm_check(self.vm_name)
+        self.test_vmm.start_vm_check(self.vm_name)
         self.test_vmm.add_vm_to_pool(self.vm_ip, "alternative", self.group)
 
         mc_time_vmm.time.return_value = mc_time.time.return_value = int(0.7 * Thresholds.health_check_period)
-        self.test_vmm.do_vm_check("alternative")
+        self.test_vmm.start_vm_check("alternative")
 
         mc_time_vmm.time.return_value = mc_time.time.return_value = 1 + Thresholds.health_check_period
         self.checker.check_health.reset_mock()
         assert not self.checker.check_health.called
         mc_do_vm_check = MagicMock()
-        self.test_vmm.do_vm_check = types.MethodType(mc_do_vm_check, self.test_vmm)
+        self.test_vmm.start_vm_check = types.MethodType(mc_do_vm_check, self.test_vmm)
         assert not mc_do_vm_check.called
 
         self.vm_master.check_vms_health()

@@ -6,6 +6,7 @@ import json
 import time
 import weakref
 from cStringIO import StringIO
+from backend.exceptions import VmError, NoVmAvailable
 
 from backend.helpers import get_redis_connection
 from .models import VmDescriptor
@@ -15,7 +16,7 @@ from . import VmStates, KEY_VM_INSTANCE, KEY_VM_POOL, EventTopics, PUBSUB_MB
 # ARGV[1] current timestamp for `last_health_check`
 set_checking_state_lua = """
 local old_state = redis.call("HGET", KEYS[1], "state")
-if old_state ~= "got_ip" and old_state ~= "ready" and old_state ~= "in_use" then
+if old_state ~= "got_ip" and old_state ~= "ready" and old_state ~= "in_use" and old_state ~= "check_health_failed" then
     return nil
 else
     if old_state ~= "in_use" then
@@ -117,13 +118,12 @@ class VmManager(object):
 
     @property
     def vm_groups(self):
-        # return self.rc.smembers(KEY_VM_GROUPS)
         return range(self.opts.build_groups_count)
 
     def add_vm_to_pool(self, vm_ip, vm_name, group):
         # print("\n ADD VM TO POOL")
         if self.rc.sismember(KEY_VM_POOL.format(group=group), vm_name):
-            raise Exception("Can't add VM `{}` to the pool, such name already used".format(vm_name))
+            raise VmError("Can't add VM `{}` to the pool, such name already used".format(vm_name))
 
         vmd = VmDescriptor(vm_ip, vm_name, group, VmStates.GOT_IP)
         # print("VMD: {}".format(vmd))
@@ -132,49 +132,24 @@ class VmManager(object):
         pipe.hmset(KEY_VM_INSTANCE.format(vm_name=vm_name), vmd.to_dict())
         pipe.execute()
         self.log("registered new VM: {}".format(vmd))
+        return vmd
 
-    def do_vm_check_in_use(self, vm_name):
-        vm_key = KEY_VM_INSTANCE.format(vm_name=vm_name)
+    def start_vm_check(self, vm_name):
+        """
+        Start VM health check sub-process if possible
+        """
+
         vmd = self.get_vm_by_name(vm_name)
-        if vmd.state != VmStates.IN_USE:
-            return
+        orig_state = vmd.state
 
-
-        ###
-
-        if self.lua_scripts["set_checking_state"](keys=[vm_key]) == "OK":
-            # entered
-            self.log("checking vm: {}".format(vm_name))
-            vmd = self.get_vm_by_name(vm_name)
-            try:
-                pipe = self.rc.pipeline()
-                vmd.store_field(pipe, "last_health_check", time.time())
-                # !! UNLESS old_state is IN_USE !!
-                vmd.store_field(pipe, "state", VmStates.READY)
-                pipe.execute()
-                self.checker.run_check_health(vmd.vm_name, vmd.vm_ip)
-
-            except Exception as err:
-                self.log("Health check failed: {}, going to terminate".format(err))
-                self.terminate_vm(vm_name)
-
-        else:
-            self.log("failed to start vm check, wrong state")
-            return False
-
-    def do_vm_check(self, vm_name):
-        # vm = self.get_vm_by_name(vm_name)
-        vm_key = KEY_VM_INSTANCE.format(vm_name=vm_name)
-
-        if self.lua_scripts["set_checking_state"](keys=[vm_key], args=[time.time()]) == "OK":
-            # entered
-            self.log("checking vm: {}".format(vm_name))
-            vmd = self.get_vm_by_name(vm_name)
+        if self.lua_scripts["set_checking_state"](keys=[vmd.vm_key], args=[time.time()]) == "OK":
+            # can start
             try:
                 self.checker.run_check_health(vmd.vm_name, vmd.vm_ip)
             except Exception as err:
-                self.log("Health check failed: {}, going to terminate".format(err))
-                self.terminate_vm(vm_name)
+                self.log("failed to start health check: {}, reverting state".format(err))
+                if orig_state != VmStates.IN_USE:
+                    vmd.store_field(self.rc, "state", orig_state)
 
         else:
             self.log("failed to start vm check, wrong state")
@@ -202,17 +177,21 @@ class VmManager(object):
                                                                    task_id, build_id, chroot]) == "OK":
                 return vmd
         else:
-            raise Exception("No VM are available, please wait in queue")
+            raise NoVmAvailable("No VM are available, please wait in queue. Group: {}".format(group))
 
     def release_vm(self, vm_name):
+        """
+        Return VM into the pool.
+        :return: True if successful
+        :rtype: bool
+        """
         # in_use -> ready
         vm_key = KEY_VM_INSTANCE.format(vm_name=vm_name)
-        if not self.lua_scripts["release_vm"](keys=[vm_key], args=[time.time()]):
-            raise Exception("VM not in in_use state")
+        return self.lua_scripts["release_vm"](keys=[vm_key], args=[time.time()]) == "OK"
 
-    def terminate_vm(self, vm_name, allowed_pre_state=None):
+    def start_vm_termination(self, vm_name, allowed_pre_state=None):
         """
-        Initiate VM termination process
+        Initiate VM termination process using redis publish.
 
         :param allowed_pre_state: When defined force check that old state is among allowed ones.
         :type allowed_pre_state: str constant from VmState
@@ -239,7 +218,7 @@ class VmManager(object):
         """
         vmd = self.get_vm_by_name(vm_name)
         if vmd.get_field(self.rc, "state") != VmStates.TERMINATING:
-            raise Exception("VM should have `terminating` state to be removable")
+            raise VmError("VM should have `terminating` state to be removable")
         pipe = self.rc.pipeline()
         pipe.srem(KEY_VM_POOL.format(group=vmd.group), vm_name)
         pipe.delete(KEY_VM_INSTANCE.format(vm_name=vm_name))
@@ -292,8 +271,3 @@ class VmManager(object):
 
             buf.write("\n")
         return buf.getvalue()
-
-
-
-
-

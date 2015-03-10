@@ -107,7 +107,7 @@ class TestChecker(object):
         self.checker.recycle = types.MethodType(mock.MagicMock, self.terminator)
         self.vm_ip = "127.0.0.1"
         self.vm_name = "localhost"
-        self.group = "x86"
+        self.group = 0
         self.username = "bob"
 
         self.rc = get_redis_connection(self.opts)

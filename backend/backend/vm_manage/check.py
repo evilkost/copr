@@ -1,20 +1,15 @@
 # coding: utf-8
 import json
 from setproctitle import setproctitle
-
-
-import weakref
-
-from ansible.runner import Runner
-
 import time
 from multiprocessing import Process
 import sys
+
+from ansible.runner import Runner
+
 from backend.helpers import get_redis_connection, format_tb
 from backend.vm_manage import PUBSUB_MB, EventTopics
 from backend.vm_manage.executor import Executor
-
-from ..exceptions import MockRemoteError, CoprWorkerError, CoprSpawnFailError
 
 
 def check_health(opts, events, vm_name, vm_ip):

@@ -78,14 +78,21 @@ class VmMaster(Process):
 
     def check_vms_health(self):
         # for machines in state ready and time.time() - vm.last_health_check > threshold_health_check_period
-        vmd_list = []
-        # import ipdb; ipdb.set_trace()
-        for group in self.vmm.vm_groups:
-            sub_list = self.vmm.get_all_vm_in_group(group)
-            vmd_list.extend(vmd for vmd in sub_list if vmd.state in [VmStates.READY, VmStates.GOT_IP, VmStates.IN_USE])
-            # vmd_list.extend(vmd for vmd in sub_list if vmd.state in [VmStates.READY, VmStates.GOT_IP])
+        states_to_check = [VmStates.CHECK_HEALTH_FAILED, VmStates.READY,
+                           VmStates.GOT_IP, VmStates.IN_USE]
+        # vmd_list = [
+        #     vmd for vmd
+        #     in self.vmm.get_all_vm()
+        #     if vmd.state in states_to_check
+        # ]
+        # # for group in self.vmm.vm_groups:
+        # #     sub_list = self.vmm.get_all_vm_in_group(group)
+        # #     vmd_list.extend(vmd for vmd in sub_list if vmd.state in states_to_check)
 
-        for vmd in vmd_list:
+        for vmd in self.vmm.get_all_vm():
+            if vmd.state not in states_to_check:
+                continue
+
             last_health_check = vmd.get_field(self.vmm.rc, "last_health_check")
             if last_health_check:
                 since_last_check = time.time() - float(last_health_check)
@@ -97,7 +104,7 @@ class VmMaster(Process):
         for group in range(self.opts.build_groups_count):
             max_vm_total = self.opts.build_groups[group]["max_vm_total"]
             active_vmd_list = self.vmm.get_vm_by_group_and_state_list(
-                group, [VmStates.GOT_IP, VmStates.READY, VmStates.IN_USE, VmStates.CHECK_HEALH])
+                group, [VmStates.GOT_IP, VmStates.READY, VmStates.IN_USE, VmStates.CHECK_HEALTH])
 
             # self.log("active VM#: {}".format(map(lambda x: (x.vm_name, x.state), active_vmd_list)))
             if len(active_vmd_list) + self.vmm.spawner.children_number >= max_vm_total:

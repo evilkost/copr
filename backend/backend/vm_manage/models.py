@@ -2,6 +2,7 @@
 
 from pprint import pformat
 from . import KEY_VM_INSTANCE
+from backend.exceptions import VmDescriptorNotFound
 
 
 class VmDescriptor(object):
@@ -41,7 +42,7 @@ class VmDescriptor(object):
     def load(cls, rc, vm_name):
         raw = rc.hgetall(KEY_VM_INSTANCE.format(vm_name=vm_name))
         if not raw:
-            raise Exception("VmDescriptor for `{}` not found".format(vm_name))
+            raise VmDescriptorNotFound("VmDescriptor for `{}` not found".format(vm_name))
         return cls.from_dict(raw)
 
     def store(self, rc):
@@ -54,6 +55,7 @@ class VmDescriptor(object):
         """
         :type rc: StrictRedis
         """
+        # TODO: add option `save_with_existnse_check`, use lua script to ensure that VMD still exists
         setattr(self, field, value)
         rc.hset(KEY_VM_INSTANCE.format(vm_name=self.vm_name), field, value)
 
@@ -65,8 +67,8 @@ class VmDescriptor(object):
         setattr(self, field, value)
         return value
 
-    def record_failure(self, rc):
-        """
-        :type rc: StrictRedis
-        """
-        rc.hincrby(KEY_VM_INSTANCE.format(vm_name=self.vm_name), "check_fails")
+    # def record_failure(self, rc):
+    #     """
+    #     :type rc: StrictRedis
+    #     """
+    #     rc.hincrby(KEY_VM_INSTANCE.format(vm_name=self.vm_name), "check_fails")

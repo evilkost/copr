@@ -14,7 +14,6 @@ from ..mockremote.callback import CliLogCallBack
 from ..exceptions import MockRemoteError, CoprWorkerError, VmError
 from ..job import BuildJob
 from ..mockremote import MockRemote
-from ..frontend import FrontendClient
 from ..constants import BuildStatus, JOB_GRAB_TASK_END_PUBSUB
 from ..helpers import register_build_result, format_tb, get_redis_connection
 

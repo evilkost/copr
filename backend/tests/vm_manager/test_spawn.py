@@ -103,7 +103,7 @@ class TestSpawner(object):
         self.spawner.recycle = types.MethodType(mock.MagicMock, self.spawner)
         self.vm_ip = "127.0.0.1"
         self.vm_name = "localhost"
-        self.group = "x86"
+        self.group = 0
         self.username = "bob"
 
         self.rc = get_redis_connection(self.opts)
@@ -245,7 +245,7 @@ class TestSpawner(object):
         assert mc_rc.publish.called
         assert mc_rc.publish.call_args == mock.call(
             'copr:backend:vm:pubsub::',
-            '{"topic": "vm_spawned", "group": "x86", "result": "foobar"}')
+            '{"topic": "vm_spawned", "group": 0, "result": "foobar"}')
 
     def test_do_spawn_and_publish_publish_error(self, mc_spawn_instance, mc_grc):
         mc_spawn_instance.return_value = {"result": "foobar"}

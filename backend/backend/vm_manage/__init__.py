@@ -3,11 +3,11 @@
 
 class VmStates(object):
     GOT_IP = "got_ip"
-    CHECK_HEALH = "check_health"
+    CHECK_HEALTH = "check_health"
+    CHECK_HEALTH_FAILED = "check_health_failed"
     READY = "ready"
     IN_USE = "in_use"
     TERMINATING = "terminating"
-    #TERMINATED = "terminated"  # can be safely removed from pool
 
 # for IPC
 PUBSUB_MB = "copr:backend:vm:pubsub::"

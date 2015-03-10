@@ -106,7 +106,7 @@ class TestTerminate(object):
         self.terminator.recycle = types.MethodType(mock.MagicMock, self.terminator)
         self.vm_ip = "127.0.0.1"
         self.vm_name = "localhost"
-        self.group = "x86"
+        self.group = 0
         self.username = "bob"
 
         self.rc = get_redis_connection(self.opts)
@@ -143,16 +143,16 @@ class TestTerminate(object):
 
         # undefined group
         with pytest.raises(CoprSpawnFailError):
-            self.terminator.terminate_vm(1, self.vm_name, self.vm_ip)
+            self.terminator.terminate_vm(group=1, vm_name=self.vm_name, vm_ip=self.vm_ip)
 
         # missing playbook
         with pytest.raises(CoprSpawnFailError):
-            self.terminator.terminate_vm(0, self.vm_name, self.vm_ip)
+            self.terminator.terminate_vm(group=0, vm_name=self.vm_name, vm_ip=self.vm_ip)
 
         # None playbook
         self.opts.build_groups[0]["terminate_playbook"] = None
         with pytest.raises(CoprSpawnFailError):
-            self.terminator.terminate_vm(0, self.vm_name, self.vm_ip)
+            self.terminator.terminate_vm(group=0, vm_name=self.vm_name, vm_ip=self.vm_ip)
 
         self.opts.build_groups[0]["terminate_playbook"] = self.terminate_pb_path
         self.touch_pb()
@@ -160,7 +160,7 @@ class TestTerminate(object):
         p1 = mock.MagicMock()
         mc_process.return_value = p1
 
-        self.terminator.terminate_vm(0, self.vm_name, self.vm_ip)
+        self.terminator.terminate_vm(group=0, vm_name=self.vm_name, vm_ip=self.vm_ip)
         assert mc_process.called
         assert self.terminator.child_processes == [p1]
         assert p1.start.called

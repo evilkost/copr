@@ -129,3 +129,7 @@ class CoprSpawnFailError(CoprBackendError):
 
 class VmError(CoprBackendError):
     pass
+
+
+class VmDescriptorNotFound(VmError):
+    pass

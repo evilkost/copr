@@ -70,7 +70,7 @@ class Terminator(Executor):
 
     __name_for_log__ = "terminator"
 
-    def terminate_vm(self, group, vm_name, vm_ip):
+    def terminate_vm(self, vm_ip, vm_name, group):
         self.recycle()
         terminate_playbook = None
         try:

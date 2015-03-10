@@ -2,11 +2,11 @@
 import json
 from setproctitle import setproctitle
 
+
 import weakref
 
-import ansible
-import ansible.runner
-import ansible.utils
+from ansible.runner import Runner
+
 import time
 from multiprocessing import Process
 import sys
@@ -37,7 +37,7 @@ def check_health(opts, events, vm_name, vm_ip):
         transport=opts.ssh.transport,
         timeout=10
     )
-    connection = ansible.runner.Runner(**runner_options)
+    connection = Runner(**runner_options)
     connection.module_name = "shell"
     connection.module_args = "echo hello"
 

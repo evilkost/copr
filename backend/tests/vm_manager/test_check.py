@@ -1,5 +1,6 @@
 # coding: utf-8
 from Queue import Empty
+import json
 import shutil
 from subprocess import CalledProcessError
 import tempfile
@@ -13,8 +14,8 @@ import six
 from backend.exceptions import CoprSpawnFailError
 
 from backend.helpers import get_redis_connection
-from backend.vm_manage import EventTopics
-from backend.vm_manage.terminate import Terminator, terminate_vm
+from backend.vm_manage import EventTopics, PUBSUB_MB
+from backend.vm_manage.check import HealthChecker, check_health
 
 if six.PY3:
     from unittest import mock
@@ -30,7 +31,7 @@ REQUIRES RUNNING REDIS
 TODO: look if https://github.com/locationlabs/mockredis can be used
 """
 
-MODULE_REF = "backend.vm_manage.terminate"
+MODULE_REF = "backend.vm_manage.check"
 
 @pytest.yield_fixture
 def mc_time():
@@ -56,8 +57,8 @@ def mc_run_ans():
 
 
 @pytest.yield_fixture
-def mc_spawn_instance():
-    with mock.patch("{}.spawn_instance".format(MODULE_REF)) as handle:
+def mc_ans_runner():
+    with mock.patch("{}.Runner".format(MODULE_REF)) as handle:
         yield handle
 
 
@@ -67,7 +68,7 @@ def mc_grc():
         yield handle
 
 
-class TestTerminate(object):
+class TestChecker(object):
 
     def setup_method(self, method):
         self.test_root_path = tempfile.mkdtemp()
@@ -102,8 +103,8 @@ class TestTerminate(object):
 
         self.queue = Queue()
 
-        self.terminator = Terminator(self.opts, self.queue)
-        self.terminator.recycle = types.MethodType(mock.MagicMock, self.terminator)
+        self.checker = HealthChecker(self.opts, self.queue)
+        self.checker.recycle = types.MethodType(mock.MagicMock, self.terminator)
         self.vm_ip = "127.0.0.1"
         self.vm_name = "localhost"
         self.group = "x86"
@@ -134,86 +135,74 @@ class TestTerminate(object):
                 break
         return res
 
-    def touch_pb(self):
-        with open(self.terminate_pb_path, "w") as handle:
-            handle.write("foobar")
-
-    def test_start_terminate(self, mc_process):
-        # mc_spawn_instance.return_value = {"vm_name": self.vm_name, "ip": self.vm_ip}
-
-        # undefined group
-        with pytest.raises(CoprSpawnFailError):
-            self.terminator.terminate_vm(1, self.vm_name, self.vm_ip)
-
-        # missing playbook
-        with pytest.raises(CoprSpawnFailError):
-            self.terminator.terminate_vm(0, self.vm_name, self.vm_ip)
-
-        # None playbook
-        self.opts.build_groups[0]["terminate_playbook"] = None
-        with pytest.raises(CoprSpawnFailError):
-            self.terminator.terminate_vm(0, self.vm_name, self.vm_ip)
-
-        self.opts.build_groups[0]["terminate_playbook"] = self.terminate_pb_path
-        self.touch_pb()
-
+    def test_start_check(self, mc_process):
         p1 = mock.MagicMock()
         mc_process.return_value = p1
 
-        self.terminator.terminate_vm(0, self.vm_name, self.vm_ip)
+        self.checker.run_check_health(self.vm_name, self.vm_ip)
         assert mc_process.called
-        assert self.terminator.child_processes == [p1]
+        assert self.checker.child_processes == [p1]
         assert p1.start.called
 
-    def test_terminate_vm_on_error(self, mc_run_ans):
-        mc_run_ans.side_effect = CalledProcessError(0, cmd=["ls"])
+    def test_check_health_runner_no_response(self, mc_ans_runner, mc_grc):
+        mc_runner = MagicMock()
+        mc_ans_runner.return_value = mc_runner
+        # mc_runner.connection.side_effect = IOError()
 
-        terminate_vm(self.opts, self.queue,
-                     self.terminate_pb_path, 0, self.vm_name, self.vm_ip)
-
-        assert any("Failed to terminate" in ev["what"] for ev in self._get_all_from_queue())
-
-    def test_do_spawn_and_publish_ok(self, mc_run_ans, mc_grc):
-        mc_rc = mock.MagicMock()
+        mc_rc = MagicMock()
         mc_grc.return_value = mc_rc
 
-        terminate_vm(self.opts, self.queue,
-                     self.terminate_pb_path, 0, self.vm_name, self.vm_ip)
+        # didn't raise exception
+        check_health(self.opts, self.queue, self.vm_name, self.vm_ip)
+        assert mc_rc.publish.call_args[0][0] == PUBSUB_MB
+        dict_result = json.loads(mc_rc.publish.call_args[0][1])
+        assert dict_result["result"] == "failed"
+        assert "VM is not responding to the testing playbook." in dict_result["msg"]
 
-        assert mc_run_ans.called
-        expected_call = mock.call(
-            '-c ssh {} --extra-vars=\'{{"copr_task": {{"vm_name": "{}", "ip": "{}"}}}}\''
-            .format(self.terminate_pb_path, self.vm_name, self.vm_ip),
-            'terminate instance')
-        assert expected_call == mc_run_ans.call_args[:-1]
+    def test_check_health_runner_exception(self, mc_ans_runner, mc_grc):
+        mc_conn = MagicMock()
+        mc_ans_runner.return_value = mc_conn
+        mc_conn.run.side_effect = IOError()
 
-        msg_list = self._get_all_from_queue()
+        mc_rc = MagicMock()
+        mc_grc.return_value = mc_rc
 
-        assert any("VM terminated" in ev["what"] for ev in msg_list)
-        assert mc_grc.called
-        assert mc_rc.publish.called
+        # didn't raise exception
+        check_health(self.opts, self.queue, self.vm_name, self.vm_ip)
+        assert mc_rc.publish.call_args[0][0] == PUBSUB_MB
+        dict_result = json.loads(mc_rc.publish.call_args[0][1])
+        assert dict_result["result"] == "failed"
+        assert "Failed to check  VM" in dict_result["msg"]
+        assert "due to ansible error:" in dict_result["msg"]
 
-        expected_call = mock.call(
-            'copr:backend:vm:pubsub::',
-            '{"vm_ip": "127.0.0.1", "vm_name": "localhost", '
-            '"topic": "vm_terminated", "group": 0, "result": "OK"}')
-        assert mc_rc.publish.call_args == expected_call
+    def test_check_health_runner_ok(self, mc_ans_runner, mc_grc):
+        mc_conn = MagicMock()
+        mc_ans_runner.return_value = mc_conn
+        mc_conn.run.return_value = {"contacted": [self.vm_ip]}
 
-    def test_do_spawn_and_publish_error(self, mc_run_ans, mc_grc):
+        mc_rc = MagicMock()
+        mc_grc.return_value = mc_rc
+
+        # didn't raise exception
+        check_health(self.opts, self.queue, self.vm_name, self.vm_ip)
+        assert mc_rc.publish.call_args[0][0] == PUBSUB_MB
+        dict_result = json.loads(mc_rc.publish.call_args[0][1])
+        assert dict_result["result"] == "OK"
+
+    def test_check_health_pubsub_publish_error(self, mc_ans_runner, mc_grc):
+        mc_conn = MagicMock()
+        mc_ans_runner.return_value = mc_conn
+        mc_conn.run.return_value = {"contacted": [self.vm_ip]}
+
         mc_grc.side_effect = ConnectionError()
 
-        terminate_vm(self.opts, self.queue,
-                     self.terminate_pb_path, 0, self.vm_name, self.vm_ip)
+        # didn't raise exception
+        check_health(self.opts, self.queue, self.vm_name, self.vm_ip)
 
-        assert mc_run_ans.called
-        expected_call = mock.call(
-            '-c ssh {} --extra-vars=\'{{"copr_task": {{"vm_name": "{}", "ip": "{}"}}}}\''
-            .format(self.terminate_pb_path, self.vm_name, self.vm_ip),
-            'terminate instance')
-        assert expected_call == mc_run_ans.call_args[:-1]
-
+        assert mc_conn.run.called
         msg_list = self._get_all_from_queue()
 
-        assert any("VM terminated" in ev["what"] for ev in msg_list)
+        # assert any("VM terminated" in ev["what"] for ev in msg_list)
         assert any("Failed to publish" in ev["what"] for ev in msg_list)
         assert mc_grc.called
+

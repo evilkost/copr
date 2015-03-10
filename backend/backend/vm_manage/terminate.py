@@ -6,7 +6,7 @@ import weakref
 import time
 from multiprocessing import Process
 import sys
-from backend.ans_utils import ans_extra_vars_encode, run_ansible_playbook, run_ansible_playbook_once
+from backend.ans_utils import ans_extra_vars_encode, run_ansible_playbook_cli
 from backend.exceptions import CoprSpawnFailError
 from backend.helpers import format_tb, get_redis_connection
 from backend.vm_manage import EventTopics, PUBSUB_MB
@@ -46,7 +46,7 @@ def terminate_vm(opts, events, terminate_playbook, group, vm_name, vm_ip):
     }
     try:
         log_fn("starting terminate playbook")
-        run_ansible_playbook_once(args, "terminate instance", log_fn=log_fn)
+        run_ansible_playbook_cli(args, "terminate instance", log_fn=log_fn)
         result["result"] = "OK"
     except Exception as error:
         result["result"] = "failed"

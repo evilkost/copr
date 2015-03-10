@@ -13,7 +13,7 @@ from multiprocessing import Process, Queue
 from redis import StrictRedis
 import sys
 
-from ..ans_utils import run_ansible_playbook, run_ansible_playbook_once
+from ..ans_utils import run_ansible_playbook_cli
 from backend.helpers import get_redis_connection, format_tb
 from backend.vm_manage import PUBSUB_MB, EventTopics
 from backend.vm_manage.executor import Executor
@@ -78,7 +78,7 @@ def spawn_instance(spawn_playbook, log_fn):
 
     spawn_args = "-c ssh {}".format(spawn_playbook)
     try:
-        result = run_ansible_playbook_once(spawn_args, name="spawning instance", log_fn=log_fn)
+        result = run_ansible_playbook_cli(spawn_args, name="spawning instance", log_fn=log_fn)
     except Exception as err:
         raise CoprSpawnFailError("Error during ansible invocation: {}".format(err.__dict__))
 

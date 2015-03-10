@@ -51,7 +51,7 @@ def mc_process():
 
 @pytest.yield_fixture
 def mc_run_ans():
-    with mock.patch("{}.run_ansible_playbook_once".format(MODULE_REF)) as handle:
+    with mock.patch("{}.run_ansible_playbook_cli".format(MODULE_REF)) as handle:
         yield handle
 
 

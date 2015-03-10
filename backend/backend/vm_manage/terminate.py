@@ -22,11 +22,14 @@ def terminate_vm(opts, events, terminate_playbook, group, vm_name, vm_ip):
     def log_fn(msg):
         events.put({"when": time.time(), "who": "terminate_proc", "what": msg})
 
-    term_args = {}
-    if "ip" in opts.terminate_vars:
-        term_args["ip"] = vm_ip
-    if "vm_name" in opts.terminate_vars:
-        term_args["vm_name"] = vm_name
+    term_args = {
+        "ip": vm_ip,
+        "vm_name": vm_name,
+    }
+    # if "ip" in opts.terminate_vars:
+    #     term_args["ip"] = vm_ip
+    # if "vm_name" in opts.terminate_vars:
+    #     term_args["vm_name"] = vm_name
 
     # args = "-c ssh -i '{0},' {1} {2}".format(
     args = "-c ssh {} {}".format(
@@ -69,14 +72,19 @@ class Terminator(Executor):
 
     def terminate_vm(self, group, vm_name, vm_ip):
         self.recycle()
+        terminate_playbook = None
         try:
             terminate_playbook = self.opts.build_groups[int(group)]["terminate_playbook"]
-            os.path.exists(terminate_playbook)
         except KeyError:
             msg = "Config missing termination playbook for group: {}".format(group)
             self.log(msg)
             raise CoprSpawnFailError(msg)
-        except OSError:
+
+        if terminate_playbook is None:
+            msg = "Missing terminate playbook for group: {} for unknown reason".format(group)
+            raise CoprSpawnFailError(msg)
+
+        if not os.path.exists(terminate_playbook):
             msg = "Termination playbook {} is missing".format(terminate_playbook)
             self.log(msg)
             raise CoprSpawnFailError(msg)

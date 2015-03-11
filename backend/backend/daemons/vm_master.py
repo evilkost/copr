@@ -35,31 +35,28 @@ class VmMaster(Process):
         self.kill_received = False
 
         self.spawned_handler = None
+        self.event_handler = None
 
     def remove_old_dirty_vms(self):
         # terminate vms bound_to user and time.time() - vm.last_release_time > threshold_keep_vm_for_user_timeout
         #  or add field to VMD ot override common threshold
-        ready_vmd_list = self.vmm.get_vm_by_group_and_state_list(None, [VmStates.READY])
-        for vmd in ready_vmd_list:
-            if vmd.get_field(self.vmm.rc, "bound_to_user") is not None:
-                last_release = vmd.get_field(self.vmm.rc, "last_release")
-                if last_release is None:
-                    continue
-                not_re_acquired_in = time.time() - float(last_release)
-                if not_re_acquired_in > Thresholds.dirty_vm_terminating_timeout:
-                    self.log("dirty VM `{}` not re-acquired in {}, terminating it"
-                             .format(vmd.vm_name, not_re_acquired_in))
-                    self.vmm.start_vm_termination(vmd.vm_name, allowed_pre_state=VmStates.READY)
+        for vmd in self.vmm.get_vm_by_group_and_state_list(None, [VmStates.READY]):
+            if vmd.get_field(self.vmm.rc, "bound_to_user") is None:
+                continue
+            last_release = vmd.get_field(self.vmm.rc, "last_release")
+            if last_release is None:
+                continue
+            not_re_acquired_in = time.time() - float(last_release)
+            if not_re_acquired_in > Thresholds.dirty_vm_terminating_timeout:
+                self.log("dirty VM `{}` not re-acquired in {}, terminating it"
+                         .format(vmd.vm_name, not_re_acquired_in))
+                self.vmm.start_vm_termination(vmd.vm_name, allowed_pre_state=VmStates.READY)
 
     def remove_vm_with_dead_builder(self):
-        # check that process who acquired VMD stil exists, othrewise release VM
-        in_use_vmd_list = self.vmm.get_vm_by_group_and_state_list(None, [VmStates.IN_USE])
-        self.log("VM in use: {}".format(map(lambda x: (x.vm_name, x.state, getattr(x, "used_by_pid")), in_use_vmd_list)))
-        for vmd in in_use_vmd_list:
+        # check that process who acquired VMD still exists, otherwise release VM
+        for vmd in self.vmm.get_vm_by_group_and_state_list(None, [VmStates.IN_USE]):
             pid = vmd.get_field(self.vmm.rc, "used_by_pid")
-            if pid is None:
-                continue
-            else:
+            if str(pid) != "None":
                 pid = int(pid)
                 if not psutil.pid_exists(pid) or vmd.vm_name not in psutil.Process(pid).name:
                     self.log("Process `{}` not exists anymore, releasing VM: {} ".format(pid, str(vmd)))
@@ -81,15 +78,10 @@ class VmMaster(Process):
                            VmStates.GOT_IP, VmStates.IN_USE]
 
         for vmd in self.vmm.get_all_vm():
-            if vmd.state not in states_to_check:
-                continue
-
-            last_health_check = vmd.get_field(self.vmm.rc, "last_health_check")
-            if last_health_check:
-                since_last_check = time.time() - float(last_health_check)
-                if since_last_check < Thresholds.health_check_period:
-                    continue
-            self.vmm.start_vm_check(vmd.vm_name)
+            if vmd.state in states_to_check:
+                last_health_check = vmd.get_field(self.vmm.rc, "last_health_check")
+                if not last_health_check or time.time() - float(last_health_check) > Thresholds.health_check_period:
+                    self.vmm.start_vm_check(vmd.vm_name)
 
     def start_spawn_if_required(self):
         for group in range(self.opts.build_groups_count):
@@ -124,17 +116,6 @@ class VmMaster(Process):
                 _, _, ex_tb = sys.exc_info()
                 self.log("Error during spawn attempt: {} {}".format(err, format_tb(err, ex_tb)))
 
-    def terminate_abandoned_vms(self):
-        max_time = time.time() + DEF_BUILD_TIMEOUT * 2
-        #for group in range(self.opts.build_groups_count):
-        is_use_vmd_list = self.vmm.get_vm_by_group_and_state_list(None, [VmStates.IN_USE])
-
-        # If builder process forget about vm clean up, we should terminate it (more safe than marking it ready)
-        # check by `in_use_since` > threshold_max_in_use_time, or add field to VMD which overrides this timeout
-        # Also run terminate again for VM in `terminating` state with
-        #   time.time() - terminating_since > threshold_terminating_timeout
-        pass
-
     def do_cycle(self):
         self.log("starting do_cycle")
         # TOOD: start_vm_check could potentially produce vmd with check state in case of server crash
@@ -147,7 +128,6 @@ class VmMaster(Process):
         self.start_spawn_if_required()
         # self.remove_vm_with_dead_builder()
 
-        self.vmm.checker.recycle()
         self.vmm.spawner.recycle()
         # self.vmm.terminator.recycle()
 
@@ -164,7 +144,7 @@ class VmMaster(Process):
         self.event_handler = EventHandler(self.vmm)
         self.event_handler.start()
 
-        while True:
+        while not self.kill_received:
             time.sleep(Thresholds.cycle_timeout)
             try:
                 self.do_cycle()
@@ -175,6 +155,7 @@ class VmMaster(Process):
 
     def terminate(self):
         self.kill_received = True
-        self.event_handler.terminate()
-        self.event_handler.join()
-        # TODO: terminate VMs
+        if self.event_handler:
+            self.event_handler.terminate()
+            self.event_handler.join()
+

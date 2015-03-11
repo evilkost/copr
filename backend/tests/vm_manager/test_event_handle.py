@@ -2,24 +2,21 @@
 from Queue import Empty
 import json
 import shutil
-from subprocess import CalledProcessError
 import tempfile
 import time
 from multiprocessing import Queue
 import types
 
 from bunch import Bunch
-from redis import ConnectionError
 from redis.client import Script
 import six
-from backend.exceptions import CoprSpawnFailError, VmDescriptorNotFound
 
+from backend.exceptions import VmDescriptorNotFound
 from backend.helpers import get_redis_connection
-from backend.vm_manage import EventTopics, PUBSUB_MB, VmStates
-from backend.vm_manage.check import HealthChecker, check_health
+from backend.vm_manage import VmStates
 from backend.vm_manage.event_handle import EventHandler, Recycle
-from backend.vm_manage.manager import VmManager
 from backend.vm_manage.models import VmDescriptor
+
 
 if six.PY3:
     from unittest import mock

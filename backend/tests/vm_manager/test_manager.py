@@ -170,6 +170,19 @@ class TestManager(object):
             self.checker.run_check_health.reset_mock()
             assert vmd.get_field(self.rc, "state") == state
 
+    def test_acquire_vm_extra_kwargs(self):
+        vmd = self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
+        vmd.store_field(self.rc, "state", VmStates.READY)
+
+        kwargs = {
+            "task_id": "20-fedora-20-x86_64",
+            "build_id": "20",
+            "chroot": "fedora-20-x86_64"
+        }
+        vmd_got = self.vmm.acquire_vm(self.group, self.username, self.pid, **kwargs)
+        for k, v in kwargs.items():
+            assert vmd_got.get_field(self.rc, k) == v
+
     def test_acquire_vm(self):
         vmd_main = self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
         vmd_alt = self.vmm.add_vm_to_pool(self.vm_ip, "alternative", self.group)

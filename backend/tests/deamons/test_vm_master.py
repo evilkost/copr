@@ -295,10 +295,9 @@ class TestVmMaster(object):
             assert mc_event_handler.called
             assert mc_event_handler.return_value.start.called
 
-        time.sleep(0.2)
-        while not self.queue.empty():
-            print(self.queue.get_nowait())
-
+        err_log = self.queue.get(timeout=1)
+        assert err_log is not None
+        assert "Unhandled error:" in err_log["what"]
 
     def test_dummy_terminate(self):
         self.vm_master.terminate()

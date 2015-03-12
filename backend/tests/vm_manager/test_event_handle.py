@@ -172,7 +172,7 @@ class TestEventHandle(object):
     def test_on_vm_termination_request(self):
         expected_call = mock.call(**self.msg)
         self.eh.on_vm_termination_request(self.msg)
-        assert self.vmm.terminator.start_vm_termination.call_args == expected_call
+        assert self.vmm.terminator.terminate_vm.call_args == expected_call
 
     def test_health_check_result_no_vmd(self):
         self.vmm.get_vm_by_name.side_effect = VmDescriptorNotFound("foobar")
@@ -236,7 +236,7 @@ class TestEventHandle(object):
         # when threshold exceeded request termination
         self.eh.on_health_check_result(msg)
         assert "check fail threshold reached" in self.vmm.log.call_args_list[-1][0][0]
-        assert self.vmm.terminate_vm.called
+        assert self.vmm.start_vm_termination.called
 
     def test_health_check_result_on_fail_from_in_use(self):
         # on fail set state to check failed state and increment fails counter

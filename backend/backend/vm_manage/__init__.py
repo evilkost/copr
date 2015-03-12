@@ -19,12 +19,6 @@ class EventTopics(object):
     VM_TERMINATION_REQUEST = "vm_termination_request"
     VM_TERMINATED = "vm_terminated"
 
-#PUBSUB_CHECKER = "copr:backend:checker:pubsub::"
-#PUBSUB_TERMINATOR = "copr:backend:terminator:pubsub::"
-#PUBSUB_TERMINATION = "copr:backend:termination:pubsub::"
-#PUBSUB_TERMINATED = "copr:backend:terminated:pubsub::"
-# PUBSUB_SPAWNER = "copr:backend:spawner:pubsub::"
-
 # argument - vm_ip
 PUBSUB_INTERRUPT_BUILDER = "copr:backend:interrupt_build:pubsub::{}"
 

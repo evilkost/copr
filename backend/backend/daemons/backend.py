@@ -253,8 +253,8 @@ def run_backend(opts):
     try:
         context = DaemonContext(
             pidfile=lockfile.FileLock(opts.pidfile),
-            # gid=grp.getgrnam("copr").gr_gid,
-            # uid=pwd.getpwnam("copr").pw_uid,
+            gid=grp.getgrnam("copr").gr_gid,
+            uid=pwd.getpwnam("copr").pw_uid,
             detach_process=opts.daemonize,
             umask=0o22,
             stderr=sys.stderr,

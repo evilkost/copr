@@ -28,21 +28,24 @@ import pytest
 from backend.daemons.job_grab import CoprJobGrab
 import backend.actions
 
+
+MODULE_REF = "backend.daemons.job_grab."
+
 @pytest.yield_fixture
 def mc_logging():
-    with mock.patch("backend.daemons.job_grab.logging") as mc_logging:
+    with mock.patch("{}logging".format(MODULE_REF)) as mc_logging:
         yield mc_logging
 
 
 @pytest.yield_fixture
 def mc_setproctitle():
-    with mock.patch("backend.daemons.job_grab.setproctitle") as mc_spt:
+    with mock.patch("{}setproctitle".format(MODULE_REF)) as mc_spt:
         yield mc_spt
 
 
 @pytest.yield_fixture
 def mc_retask_queue():
-    with mock.patch("backend.daemons.job_grab.Queue") as mc_queue:
+    with mock.patch("{}Queue".format(MODULE_REF)) as mc_queue:
         def make_queue(*args, **kwargs):
             updated_kwargs = copy.deepcopy(kwargs)
             updated_kwargs["spec"] = Queue
@@ -57,7 +60,7 @@ class TestJobGrab(object):
 
     def setup_method(self, method):
 
-        self.mc_mpp_patcher = mock.patch("backend.daemons.job_grab.Process")
+        self.mc_mpp_patcher = mock.patch("{}Process".format(MODULE_REF))
         self.mc_mpp = self.mc_mpp_patcher.start()
 
         self.test_time = time.time()
@@ -85,6 +88,7 @@ class TestJobGrab(object):
 
         self.queue = MagicMock()
         self.lock = MagicMock()
+        self.frontend_client = MagicMock()
 
         self.task_dict_1 = dict(
             task_id=12345,
@@ -111,17 +115,17 @@ class TestJobGrab(object):
 
     @pytest.yield_fixture
     def mc_time(self):
-        with mock.patch("backend.daemons.job_grab.time") as mc_time:
+        with mock.patch("{}time".format(MODULE_REF)) as mc_time:
             mc_time.time.return_value = self.test_time
             yield mc_time
 
     @pytest.fixture
     def init_jg(self, mc_retask_queue):
-        self.jg = CoprJobGrab(self.opts, self.queue, self.lock)
+        self.jg = CoprJobGrab(self.opts, self.queue, self.frontend_client, self.lock)
         self.jg.connect_queues()
 
     def test_connect_queues(self, mc_retask_queue):
-        self.jg = CoprJobGrab(self.opts, self.queue, self.lock)
+        self.jg = CoprJobGrab(self.opts, self.queue, self.frontend_client, self.lock)
 
         assert len(self.jg.task_queues_by_arch) == 0
         self.jg.connect_queues()

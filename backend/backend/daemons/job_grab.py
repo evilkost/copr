@@ -69,10 +69,9 @@ class CoprJobGrab(Process):
                 self.task_queues_by_arch[arch] = queue
 
         self.rc = get_redis_connection(self.opts)
+        # import ipdb; ipdb.set_trace()
         self.channel = self.rc.pubsub(ignore_subscribe_messages=True)
         self.channel.subscribe(JOB_GRAB_TASK_END_PUBSUB)
-        while self.channel.get_message() is not None:
-            pass
 
     def event(self, what):
         """
@@ -82,7 +81,7 @@ class CoprJobGrab(Process):
         """
         self.events.put({"when": time.time(), "who": "jobgrab", "what": what})
 
-    def process_build_task(self, task):
+    def route_build_task(self, task):
         """
         Route build task to the appropriate queue.
         :param task: dict-like object which represent build task
@@ -151,7 +150,7 @@ class CoprJobGrab(Process):
             count = 0
             for task in r_json["builds"]:
                 try:
-                    count += self.process_build_task(task)
+                    count += self.route_build_task(task)
                 except CoprJobGrabError as err:
                     self.event("Failed to enqueue new job: {} with error: {}"
                                .format(task, err))
@@ -173,13 +172,15 @@ class CoprJobGrab(Process):
         """
         Listens for pubsub and remove jobs from self.added_jobs so we can re-add jobs failed due to VM error
         """
+        # TODO: rewrite as a Thread with pubsub.listen()
         self.event("Trying to rcv remove msg")
         while True:
             raw = self.channel.get_message()
             self.event("Recv rem msg: ".format(raw))
             if raw is None:
                 break
-            if raw["type"] != "message":
+            if "type" not in raw or raw["type"] != "message":
+                self.event("Missing type or wrong type in pubsub msg: {}, ignored".format(raw))
                 continue
             try:
                 msg = json.loads(raw["data"])
@@ -207,12 +208,10 @@ class CoprJobGrab(Process):
                         self.added_jobs.remove(task_id)
                         self.event("Remove task from added_jobs".format(msg))
                 if action == "reschedule":
-                        if "build_id" not in msg or "chroot" not in msg:
-                            self.added_jobs.remove(task_id)
-                            self.event("Removed task from added_jobs".format(msg))
-                        else:
+                        self.added_jobs.remove(task_id)
+                        self.event("Removed task from added_jobs".format(msg))
+                        if "build_id" in msg and "chroot" in msg:
                             self.frontend_client.reschedule_build(msg["build_id"], msg["chroot"])
-                            self.added_jobs.remove(task_id)
 
             except Exception as err:
                 _, _, ex_tb = sys.exc_info()

@@ -11,14 +11,14 @@ from retask.queue import Queue
 
 from ..vm_manage.manager import VmManager
 from ..mockremote.callback import CliLogCallBack
-from ..exceptions import MockRemoteError, CoprWorkerError, VmError
+from ..exceptions import MockRemoteError, CoprWorkerError, VmError, NoVmAvailable
 from ..job import BuildJob
 from ..mockremote import MockRemote
 from ..constants import BuildStatus, JOB_GRAB_TASK_END_PUBSUB
 from ..helpers import register_build_result, format_tb, get_redis_connection
 
 
-ansible_playbook = "ansible-playbook"
+# ansible_playbook = "ansible-playbook"
 
 try:
     import fedmsg
@@ -104,6 +104,7 @@ class Worker(multiprocessing.Process):
         self.vm_ip = None
         self.callback.log("creating worker: dynamic ip")
 
+        self.rc = None
         self.vmm = VmManager(self.opts, self.events)
 
     @property
@@ -113,7 +114,7 @@ class Worker(multiprocessing.Process):
         except Exception as error:
             self.callback.log("Failed to get builder group name from config, using group_id as name."
                               "Original error: {}".format(error))
-            return self.group_id
+            return str(self.group_id)
 
     def event(self, topic, template, content=None):
         """ Multi-purpose logging method.
@@ -197,6 +198,7 @@ class Worker(multiprocessing.Process):
         self.callback.log("build: {}".format(build))
 
         data = {"builds": [build]}
+        # import ipdb; ipdb.set_trace()
         try:
             self.frontend_client.update(data)
         except:
@@ -321,6 +323,7 @@ class Worker(multiprocessing.Process):
 
         :param job: :py:class:`~backend.job.BuildJob`
         """
+
         self._announce_start(job)
         self.update_process_title(suffix="Task: {} chroot: {} build started".format(job.build_id, job.chroot))
         status = BuildStatus.SUCCEEDED
@@ -418,6 +421,56 @@ class Worker(multiprocessing.Process):
 
         self.rc.publish(JOB_GRAB_TASK_END_PUBSUB, json.dumps(request))
 
+    def run_cycle(self):
+        self.update_process_title(suffix="trying to acquire job")
+
+        # self.callback.log("Trying to obtain a job ")
+        job = self.obtain_job()
+        if not job:
+            time.sleep(self.opts.sleeptime)
+            return
+
+        start_vm_wait_time = time.time()
+        vmd = None
+        while vmd is None:
+            try:
+                self.update_process_title(suffix="trying to acquire VM for job {} for {}s"
+                                          .format(job.task_id, time.time() - start_vm_wait_time))
+                vmd = self.vmm.acquire_vm(self.group_id, job.project_owner, os.getpid(),
+                                          job.task_id, job.build_id, job.chroot)
+            except NoVmAvailable as error:
+                self.callback.log("No VM yet: {}".format(error))
+                time.sleep(self.opts.sleeptime)
+                continue
+            except Exception as error:
+                _, _, ex_tb = sys.exc_info()
+                self.callback.log("Unhandled exception during VM acquire :{}, {}".format(error, format_tb(error, ex_tb)))
+                self.notify_job_grab_about_task_end(job, do_reschedule=True)
+                time.sleep(self.opts.sleeptime)
+                return
+
+        try:
+            # got vmd
+            # TODO: store self.vmd = vmd and use it
+            self.vm_name = vmd.vm_name
+            self.vm_ip = vmd.vm_ip
+
+            self.do_job(job)
+            self.notify_job_grab_about_task_end(job)
+        except VmError as error:
+            _, _, ex_tb = sys.exc_info()
+            self.callback.log("Builder error, re-scheduling task: {}, {}".format(error, format_tb(error, ex_tb)))
+            self.notify_job_grab_about_task_end(job, do_reschedule=True)
+        except Exception as error:
+            _, _, ex_tb = sys.exc_info()
+            self.callback.log("Unhandled build error: {}, {}".format(error, format_tb(error, ex_tb)))
+            self.notify_job_grab_about_task_end(job, do_reschedule=True)
+        finally:
+            # clean up the instance
+            self.vmm.release_vm(vmd.vm_name)
+            self.vm_ip = None
+            self.vm_name = None
+
     def run(self):
         self.init_fedmsg()
         self.vmm.post_init()
@@ -425,48 +478,4 @@ class Worker(multiprocessing.Process):
         self.rc = get_redis_connection(self.opts)
         self.update_process_title(suffix="trying to acquire job")
         while not self.kill_received:
-            self.update_process_title(suffix="trying to acquire job")
-
-            # self.callback.log("Trying to obtain a job ")
-            job = self.obtain_job()
-            if not job:
-                time.sleep(self.opts.sleeptime)
-                continue
-
-            start_vm_wait_time = time.time()
-            vmd = None
-            while vmd is None:
-                try:
-                    self.update_process_title(suffix="trying to acquire VM for job {} for {}s"
-                                              .format(job.task_id, time.time() - start_vm_wait_time))
-                    vmd = self.vmm.acquire_vm(self.group_id, job.project_owner, os.getpid(),
-                                              job.task_id, job.build_id, job.chroot)
-                except Exception as error:
-                    # TODO: add specific expections
-                    _, _, ex_tb = sys.exc_info()
-                    self.callback.log("Failed to acquire a VM :{}, {}".format(error, format_tb(error, ex_tb)))
-                    time.sleep(self.opts.sleeptime)
-                    continue
-
-            try:
-                # got vmd
-                # TODO: store self.vmd = vmd and use it
-                self.vm_name = vmd.vm_name
-                self.vm_ip = vmd.vm_ip
-
-                self.do_job(job)
-                self.notify_job_grab_about_task_end(job)
-            except VmError as error:
-                _, _, ex_tb = sys.exc_info()
-                self.notify_job_grab_about_task_end(job, do_reschedule=True)
-                self.callback.log("Builder error, re-scheduling task: {}, {}".format(error, format_tb(error, ex_tb)))
-            except Exception as error:
-                _, _, ex_tb = sys.exc_info()
-                self.callback.log("Unhandled build error: {}, {}".format(error, format_tb(error, ex_tb)))
-                self.notify_job_grab_about_task_end(job, do_reschedule=True)
-            finally:
-                # clean up the instance
-                self.vmm.release_vm(vmd.vm_name)
-                self.vm_ip = None
-                self.vm_name = None
-
+            self.run_cycle()

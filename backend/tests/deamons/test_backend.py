@@ -27,31 +27,31 @@ COPR_OWNER = "copr_owner"
 COPR_NAME = "copr_name"
 COPR_VENDOR = "vendor"
 
-MODULE_REF = "backend.daemons.backend."
+MODULE_REF = "backend.daemons.backend"
 
 @pytest.yield_fixture
 def mc_rt_queue():
-    with mock.patch("{}Queue".format(MODULE_REF)) as mc_queue:
+    with mock.patch("{}.Queue".format(MODULE_REF)) as mc_queue:
         yield mc_queue
 
 @pytest.yield_fixture
 def mc_worker():
-    with mock.patch("{}Worker".format(MODULE_REF)) as worker:
+    with mock.patch("{}.Worker".format(MODULE_REF)) as worker:
         yield worker
 
 @pytest.yield_fixture
 def mc_time():
-    with mock.patch("{}time".format(MODULE_REF)) as time_:
+    with mock.patch("{}.time".format(MODULE_REF)) as time_:
         yield time_
 
 @pytest.yield_fixture
 def mc_be():
-    with mock.patch("{}CoprBackend".format(MODULE_REF)) as obj:
+    with mock.patch("{}.CoprBackend".format(MODULE_REF)) as obj:
         yield obj
 
 @pytest.yield_fixture
 def mc_daemon_context():
-    with mock.patch("{}DaemonContext".format(MODULE_REF)) as obj:
+    with mock.patch("{}.DaemonContext".format(MODULE_REF)) as obj:
         yield obj
 
 
@@ -128,7 +128,7 @@ class TestBackend(object):
     def mc_vmm_stuff(self):
         patchers = []
         for klass_name in ["Spawner", "HealthChecker", "Terminator", "VmManager", "VmMaster"]:
-            patcher = mock.patch("{}{}".format(MODULE_REF, klass_name))
+            patcher = mock.patch("{}.{}".format(MODULE_REF, klass_name))
             patchers.append(patcher)
             setattr(self, klass_name, patcher.start())
 
@@ -358,8 +358,6 @@ class TestBackend(object):
         assert mc_be.called
         expected_call = mock.call(self.config_file, ext_opts=self.run_opts)
         assert mc_be.call_args == expected_call
-        # umask=18,
-        # gid=7, stderr=<open file '<stderr>', mode 'w' at 0x7f6b7902c1e0>, detach_process=True, pidfile=<LinkLockFile: '/tmp/test_createrepo_1418062487.37/heaven-79051740.3723-4115117572267162726' -- '/tmp/test_createrepo_1418062487.37/backend.pid'>, uid=<MagicMock name='pwd.getpwnam().pw_uid' id='56906832'>)
 
     def test_run_backend_keyboard_interrupt(self, mc_be, mc_daemon_context, capsys):
         mc_be.return_value.run.side_effect = KeyboardInterrupt()

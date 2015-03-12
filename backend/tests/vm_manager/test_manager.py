@@ -30,9 +30,11 @@ REQUIRES RUNNING REDIS
 TODO: look if https://github.com/locationlabs/mockredis can be used
 """
 
+MODULE_REF = "backend.vm_manage.manager"
+
 @pytest.yield_fixture
 def mc_time():
-    with mock.patch("backend.vm_manage.manager.time") as handle:
+    with mock.patch("{}.time".format(MODULE_REF)) as handle:
         yield handle
 
 

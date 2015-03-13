@@ -71,8 +71,7 @@ class TestMockRemote(object):
         self.mr_cb = self.get_callback()
         patcher = mock.patch("backend.mockremote.Builder")
         self.mc_builder = patcher.start()
-        self.mr = MockRemote(self.HOST, self.JOB, callback=self.mr_cb,
-                             macros=self.MACROS, opts=self.OPTS)
+        self.mr = MockRemote(self.HOST, self.JOB, callback=self.mr_cb, opts=self.OPTS)
         self.mr.check()
         yield
         patcher.stop()
@@ -102,11 +101,7 @@ class TestMockRemote(object):
             "destdir": self.test_root_path,
             "results_baseurl": "/tmp/",
         }))
-        self.MACROS = {
-            "copr_username": COPR_OWNER,
-            "copr_projectname": COPR_NAME,
-            "vendor": COPR_VENDOR
-        }
+
         self.OPTS = Bunch({
             "do_sign": False,
             "results_baseurl": self.BASE_URL,
@@ -120,7 +115,7 @@ class TestMockRemote(object):
         pass
 
     def test_default_callback(self, f_mock_remote, capsys):
-        mr_2 = MockRemote(self.HOST, self.JOB, macros=self.MACROS, opts=self.OPTS)
+        mr_2 = MockRemote(self.HOST, self.JOB, opts=self.OPTS)
         mr_2.check()
         out, err = capsys.readouterr()
 
@@ -130,7 +125,7 @@ class TestMockRemote(object):
     def test_no_job_chroot(self, f_mock_remote, capsys):
         job_2 = copy.deepcopy(self.JOB)
         job_2.chroot = None
-        mr_2 = MockRemote(self.HOST, job_2, macros=self.MACROS, opts=self.OPTS)
+        mr_2 = MockRemote(self.HOST, job_2, opts=self.OPTS)
         with pytest.raises(MockRemoteError):
             mr_2.check()
 
@@ -297,24 +292,3 @@ class TestMockRemote(object):
         assert os.path.exists(info_file_path)
         with open(info_file_path) as handle:
             assert str(self.JOB.build_id) in handle.read()
-
-    def test_build_pkgs_ignore_error_once(self, f_mock_remote):
-        err_msg = "error message"
-        build_details = MagicMock()
-
-        self.mr.build_pkg_and_process_results = MagicMock()
-        self.mr.build_pkg_and_process_results.side_effect = [
-            MockRemoteError(err_msg), build_details]
-
-        result = self.mr.build_pkg()
-        assert result == build_details
-        assert err_msg in self._cb_log["error"][-1]
-
-    def test_build_pkgs_exceed_retry(self, f_mock_remote):
-        err_msg = "error message"
-
-        self.mr.build_pkg_and_process_results = MagicMock()
-        self.mr.build_pkg_and_process_results.side_effect = MockRemoteError(err_msg)
-
-        with pytest.raises(MockRemoteError):
-            self.mr.build_pkg()

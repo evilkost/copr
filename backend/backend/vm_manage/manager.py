@@ -68,8 +68,6 @@ end
 # ARGS [2]: timestamp for `terminating_since`
 terminate_vm_lua = """
 local old_state = redis.call("HGET", KEYS[1], "state")
-redis.log(redis.LOG_DEBUG, "old state " .. old_state )
-redis.log(redis.LOG_DEBUG, "allowed_pre_state " .. ARGV[1] )
 
 if old_state == "terminating" then
     return "Already terminating"
@@ -77,6 +75,14 @@ elseif ARGV[1] and ARGV[1] ~= "None" and old_state ~= ARGV[1] then
     return "Old state != `allowed_pre_state`"
 else
     redis.call("HMSET", KEYS[1], "state", "terminating", "terminating_since", ARGV[2])
+    return "OK"
+end
+"""
+
+mark_vm_check_failed_lua = """
+local old_state = redis.call("HGET", KEYS[1], "state")
+if old_state == "check_health" then
+    redis.call("HMSET", KEYS[1], "state", "check_health_failed")
     return "OK"
 end
 """
@@ -119,6 +125,7 @@ class VmManager(object):
         self.lua_scripts["acquire_vm"] = self.rc.register_script(acquire_vm_lua)
         self.lua_scripts["release_vm"] = self.rc.register_script(release_vm_lua)
         self.lua_scripts["terminate_vm"] = self.rc.register_script(terminate_vm_lua)
+        self.lua_scripts["mark_vm_check_failed"] = self.rc.register_script(mark_vm_check_failed_lua)
 
     @property
     def vm_groups(self):
@@ -158,6 +165,10 @@ class VmManager(object):
         else:
             self.log("failed to start vm check, wrong state")
             return False
+
+    def mark_vm_check_failed(self, vm_name):
+        vm_key = KEY_VM_INSTANCE.format(vm_name=vm_name)
+        self.lua_scripts["mark_vm_check_failed"](keys=[vm_key])
 
     def acquire_vm(self, group, username, pid, task_id=None, build_id=None, chroot=None):
         """
@@ -201,8 +212,7 @@ class VmManager(object):
         :type allowed_pre_state: str constant from VmState
         """
         vmd = self.get_vm_by_name(vm_name)
-        vm_key = KEY_VM_INSTANCE.format(vm_name=vm_name)
-        lua_result = self.lua_scripts["terminate_vm"](keys=[vm_key], args=[allowed_pre_state, time.time()])
+        lua_result = self.lua_scripts["terminate_vm"](keys=[vmd.vm_key], args=[allowed_pre_state, time.time()])
         if lua_result == "OK":
             msg = {
                 "group": vmd.group,

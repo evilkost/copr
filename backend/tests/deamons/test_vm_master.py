@@ -261,6 +261,26 @@ class TestVmMaster(object):
         to_check = set(call[0][1] for call in self.vmm.start_vm_check.call_args_list)
         assert set(['a1', 'a3', 'b1', 'b2']) == to_check
 
+    def test_finalize_long_health_checks(self, mc_time, add_vmd):
+
+        mc_time.time.return_value = 0
+        self.vmd_a1.store_field(self.rc, "state", VmStates.IN_USE)
+        self.vmd_a2.store_field(self.rc, "state", VmStates.CHECK_HEALTH)
+        self.vmd_a3.store_field(self.rc, "state", VmStates.CHECK_HEALTH)
+
+        self.vmd_a2.store_field(self.rc, "last_health_check", 0)
+        self.vmd_a3.store_field(self.rc, "last_health_check", Thresholds.health_check_max_time + 10 )
+
+        mc_time.time.return_value = Thresholds.health_check_max_time + 11
+
+        self.vmm.mark_vm_check_failed = MagicMock()
+        self.vm_master.finalize_long_health_checks()
+        assert self.vmm.mark_vm_check_failed.called_once
+        assert self.vmm.mark_vm_check_failed.call_args[0][0] == "a2"
+
+
+
+
 
     def test_run_undefined_helpers(self, mc_setproctitle):
         for target in ["spawner", "terminator", "checker"]:

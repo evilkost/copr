@@ -77,11 +77,10 @@ class VmMaster(Process):
         states_to_check = [VmStates.CHECK_HEALTH_FAILED, VmStates.READY,
                            VmStates.GOT_IP, VmStates.IN_USE]
 
-        for vmd in self.vmm.get_all_vm():
-            if vmd.state in states_to_check:
-                last_health_check = vmd.get_field(self.vmm.rc, "last_health_check")
-                if not last_health_check or time.time() - float(last_health_check) > Thresholds.health_check_period:
-                    self.vmm.start_vm_check(vmd.vm_name)
+        for vmd in self.vmm.get_vm_by_group_and_state_list(None, states_to_check):
+            last_health_check = vmd.get_field(self.vmm.rc, "last_health_check")
+            if not last_health_check or time.time() - float(last_health_check) > Thresholds.health_check_period:
+                self.vmm.start_vm_check(vmd.vm_name)
 
     def start_spawn_if_required(self):
         for group in range(self.opts.build_groups_count):
@@ -126,7 +125,9 @@ class VmMaster(Process):
         self.remove_old_dirty_vms()
         self.check_vms_health()
         self.start_spawn_if_required()
-        # self.remove_vm_with_dead_builder()
+
+        self.restart_termination()
+        self.finalize_long_health_checks()
 
         self.vmm.spawner.recycle()
         # self.vmm.terminator.recycle()
@@ -158,4 +159,19 @@ class VmMaster(Process):
         if self.event_handler:
             self.event_handler.terminate()
             self.event_handler.join()
+
+    def restart_termination(self):
+        pass
+
+    def finalize_long_health_checks(self):
+        """
+        After server crash it's possible that some VM's will remain in `check_health` state
+        Here we are looking for such records and mark them with `check_health_failed` state
+        """
+        for vmd in self.vmm.get_vm_by_group_and_state_list(None, [VmStates.CHECK_HEALTH]):
+
+            time_elapsed = time.time() - float(vmd.get_field(self.vmm.rc, "last_health_check") or 0)
+            self.log("Checking for long health check, elapsed: {} VM: {}".format(time_elapsed, str(vmd)))
+            if time_elapsed > Thresholds.health_check_max_time:
+                self.vmm.mark_vm_check_failed(vmd.vm_name)
 

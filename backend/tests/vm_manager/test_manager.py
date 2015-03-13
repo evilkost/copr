@@ -155,6 +155,23 @@ class TestManager(object):
             assert not self.checker.run_check_health.called
             assert vmd.get_field(self.rc, "state") == state
 
+    def test_mark_vm_check_failed(self, mc_time):
+        self.vmm.start_vm_termination = types.MethodType(MagicMock(), self.vmm)
+        self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
+        vmd = self.vmm.get_vm_by_name(self.vm_name)
+        vmd.store_field(self.rc, "state", VmStates.CHECK_HEALTH)
+        vmd.store_field(self.rc, "last_health_check", 12345)
+
+        self.vmm.mark_vm_check_failed(self.vm_name)
+
+        assert vmd.get_field(self.rc, "state") == VmStates.CHECK_HEALTH_FAILED
+        states = [VmStates.GOT_IP, VmStates.IN_USE, VmStates.READY, VmStates.TERMINATING]
+        for state in states:
+            vmd.store_field(self.rc, "state", state)
+            self.vmm.mark_vm_check_failed(self.vm_name)
+            assert vmd.get_field(self.rc, "state") == state
+
+
     def test_start_vm_check_lua_ok_check_spawn_failed(self):
         self.vmm.start_vm_termination = types.MethodType(MagicMock(), self.vmm)
         self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)

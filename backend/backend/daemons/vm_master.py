@@ -88,9 +88,12 @@ class VmMaster(Process):
         active_vmd_list = self.vmm.get_vm_by_group_and_state_list(
             group, [VmStates.GOT_IP, VmStates.READY, VmStates.IN_USE, VmStates.CHECK_HEALTH])
 
-        # self.log("active VM#: {}".format(map(lambda x: (x.vm_name, x.state), active_vmd_list)))
+        # self.log("Spawner proc count: {}".format(self.vmm.spawner.children_number))
+        #self.log("active VM#: {}".format(map(lambda x: (x.vm_name, x.state), active_vmd_list)))
         total_vm_estimation = len(active_vmd_list) + self.vmm.spawner.children_number
         if total_vm_estimation >= max_vm_total:
+            self.log("Skip spawn: max total vm reached for group {}: vm count: {}, spawn process: {}"
+                     .format(group, len(active_vmd_list), self.opts.build_groups[group]["max_vm_total"]))
             return
         last_vm_spawn_start = self.vmm.rc.hget(KEY_VM_POOL_INFO.format(group=group), "last_vm_spawn_start")
         if last_vm_spawn_start:
@@ -100,9 +103,9 @@ class VmMaster(Process):
                          .format(time_elapsed, Thresholds.vm_spawn_min_interval))
                 return
 
-        if len(self.vmm.spawner.child_processes) >= self.opts.build_groups[group]["max_spawn_processes"]:
+        if self.vmm.spawner.children_number >= self.opts.build_groups[group]["max_spawn_processes"]:
             self.log("Skip spawn: reached maximum number of spawning processes: {}"
-                     .format(len(self.vmm.spawner.child_processes)))
+                     .format(self.vmm.spawner.children_number))
             return
 
         count_all_vm = len(self.vmm.get_all_vm_in_group(group))
@@ -120,7 +123,7 @@ class VmMaster(Process):
             self.log("Error during spawn attempt: {} {}".format(err, format_tb(err, ex_tb)))
 
     def start_spawn_if_required(self):
-        for group in range(self.opts.build_groups_count):
+        for group in self.vmm.vm_groups:
             self.try_spawn_one(group)
 
     def do_cycle(self):

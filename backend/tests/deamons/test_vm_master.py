@@ -9,6 +9,7 @@ import copy
 
 from collections import defaultdict
 import json
+from random import choice
 import types
 from bunch import Bunch
 import time
@@ -89,7 +90,9 @@ class TestVmMaster(object):
             build_groups={
                 0: {
                     "name": "base",
-                    "archs": ["i386", "x86_64"]
+                    "archs": ["i386", "x86_64"],
+                    "max_vm_total": 5,
+                    "max_spawn_processes": 3,
                 },
                 1: {
                     "name": "arm",
@@ -129,10 +132,13 @@ class TestVmMaster(object):
         self.vm_master.event_handler = MagicMock()
         self.pid = 12345
 
-    def teardown_method(self, method):
+    def clean_redis(self):
         keys = self.vmm.rc.keys("*")
         if keys:
             self.vmm.rc.delete(*keys)
+
+    def teardown_method(self, method):
+        self.clean_redis()
 
     @pytest.fixture
     def add_vmd(self):
@@ -331,7 +337,6 @@ class TestVmMaster(object):
         assert self.vmm.remove_vm_from_pool.call_args[0][0] == self.vmd_a1.vm_name
         assert not self.vmm.start_vm_termination.called
 
-
     def test_run_undefined_helpers(self, mc_setproctitle):
         for target in ["spawner", "terminator", "checker"]:
             setattr(self.vmm, target, None)
@@ -387,3 +392,87 @@ class TestVmMaster(object):
         assert self.vm_master.start_spawn_if_required.called
 
         assert self.vmm.spawner.recycle.called
+
+    def test_dummy_start_spawn_if_required(self):
+        self.vm_master.try_spawn_one = MagicMock()
+        self.vm_master.start_spawn_if_required()
+        assert self.vm_master.try_spawn_one.call_args_list == [
+            mock.call(group) for group in range(self.opts.build_groups_count)
+        ]
+
+    def test_try_spawn_one_max_total_vm(self):
+        self.vm_master.log = MagicMock()
+        active_vm_states = [VmStates.GOT_IP, VmStates.READY, VmStates.IN_USE, VmStates.CHECK_HEALTH]
+        cases = [
+            # active_vms_number , spawn_procs_number
+            (x, 11 - x) for x in range(12)
+        ]
+        # print(cases)
+        self.opts.build_groups[0]["max_vm_total"] = 10
+        for active_vms_number, spawn_procs_number in cases:
+            vmd_list = [
+                self.vmm.add_vm_to_pool("127.0.0.{}".format(idx + 1), "a{}".format(idx), 0)
+                for idx in range(active_vms_number)
+            ]
+            for idx in range(active_vms_number):
+                state = choice(active_vm_states)
+                vmd_list[idx].store_field(self.rc, "state", state)
+            self.vmm.spawner.children_number = spawn_procs_number
+
+            self.vm_master.try_spawn_one(0)
+            assert any("Skip spawn: max total vm reached " in call[0][0]
+                       for call in self.vm_master.log.call_args_list)
+            assert not self.vmm.spawner.start_spawn.called
+            self.vm_master.log.reset_mock()
+
+            # teardown
+            self.clean_redis()
+
+    def test_try_spawn_one_last_spawn_time(self, mc_time):
+        # don't start new spawn if last_spawn_time was in less Threshold.vm_spawn_min_interval ago
+        mc_time.time.return_value = 0
+        self.vm_master.try_spawn_one(0)
+        assert self.vmm.spawner.start_spawn.called_once
+        self.vmm.spawner.start_spawn.reset_mock()
+
+        self.vm_master.try_spawn_one(0)
+        assert not self.vmm.spawner.start_spawn.called
+        mc_time.time.return_value = 1 + Thresholds.vm_spawn_min_interval
+        self.vm_master.try_spawn_one(0)
+        assert self.vmm.spawner.start_spawn.called_once
+
+    def test_try_spawn_max_spawn_processes(self, mc_time):
+        mc_time.time.return_value = 0
+        self.vmm.log = MagicMock()
+        self.vm_master.try_spawn_one(0)
+        assert self.vmm.spawner.start_spawn.called_once
+        self.vmm.spawner.start_spawn.reset_mock()
+
+        self.vmm.log.reset_mock()
+        mc_time.time.return_value = 1 + Thresholds.vm_spawn_min_interval
+
+        self.vmm.spawner.children_number = self.opts.build_groups[0]["max_spawn_processes"] + 1
+
+        self.vm_master.try_spawn_one(0)
+        assert not self.vmm.spawner.start_spawn.called
+
+    def test_try_spawn_all_vm_failsafe(self, mc_time):
+        mc_time.time.return_value = 0
+        self.vmm.log = MagicMock()
+        self.opts.build_groups[0]["max_vm_total"] = 2
+        for idx in range(4):
+            vmd = self.vmm.add_vm_to_pool("127.0.0.{}".format(idx + 1), "a{}".format(idx), 0)
+            vmd.store_field(self.rc, "state", VmStates.TERMINATING)
+        self.vm_master.try_spawn_one(0)
+        assert not self.vmm.spawner.start_spawn.called
+
+    def test_try_spawn_error_handling(self, mc_time):
+        mc_time.time.return_value = 0
+        self.vm_master.log = MagicMock()
+
+        self.vmm.spawner.start_spawn.side_effect = IOError()
+
+        self.vm_master.try_spawn_one(0)
+        assert self.vmm.spawner.start_spawn.called
+        assert any("Error during spawn" in call[0][0]
+                   for call in self.vm_master.log.call_args_list)

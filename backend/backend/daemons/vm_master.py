@@ -54,6 +54,7 @@ class VmMaster(Process):
 
     def remove_vm_with_dead_builder(self):
         # check that process who acquired VMD still exists, otherwise release VM
+        # TODO: fix 4 nested `if`. Ugly!
         for vmd in self.vmm.get_vm_by_group_and_state_list(None, [VmStates.IN_USE]):
             pid = vmd.get_field(self.vmm.rc, "used_by_pid")
             if str(pid) != "None":
@@ -82,43 +83,48 @@ class VmMaster(Process):
             if not last_health_check or time.time() - float(last_health_check) > Thresholds.health_check_period:
                 self.vmm.start_vm_check(vmd.vm_name)
 
+    def try_spawn_one(self, group):
+        max_vm_total = self.opts.build_groups[group]["max_vm_total"]
+        active_vmd_list = self.vmm.get_vm_by_group_and_state_list(
+            group, [VmStates.GOT_IP, VmStates.READY, VmStates.IN_USE, VmStates.CHECK_HEALTH])
+
+        # self.log("active VM#: {}".format(map(lambda x: (x.vm_name, x.state), active_vmd_list)))
+        total_vm_estimation = len(active_vmd_list) + self.vmm.spawner.children_number
+        if total_vm_estimation >= max_vm_total:
+            return
+        last_vm_spawn_start = self.vmm.rc.hget(KEY_VM_POOL_INFO.format(group=group), "last_vm_spawn_start")
+        if last_vm_spawn_start:
+            time_elapsed = time.time() - float(last_vm_spawn_start)
+            if time_elapsed < Thresholds.vm_spawn_min_interval:
+                self.log("Skip spawn: time after previous spawn attempt < vm_spawn_min_interval: {}<{}"
+                         .format(time_elapsed, Thresholds.vm_spawn_min_interval))
+                return
+
+        if len(self.vmm.spawner.child_processes) >= self.opts.build_groups[group]["max_spawn_processes"]:
+            self.log("Skip spawn: reached maximum number of spawning processes: {}"
+                     .format(len(self.vmm.spawner.child_processes)))
+            return
+
+        count_all_vm = len(self.vmm.get_all_vm_in_group(group))
+        if count_all_vm >= 2 * self.opts.build_groups[group]["max_vm_total"]:
+            self.log("Skip spawn: #(ALL VM) >= 2 * max_vm_total reached: {}"
+                     .format(count_all_vm))
+            return
+
+        self.log("start spawning new VM for group: {}".format(self.opts.build_groups[group]["name"]))
+        self.vmm.rc.hset(KEY_VM_POOL_INFO.format(group=group), "last_vm_spawn_start", time.time())
+        try:
+            self.vmm.spawner.start_spawn(group)
+        except Exception as err:
+            _, _, ex_tb = sys.exc_info()
+            self.log("Error during spawn attempt: {} {}".format(err, format_tb(err, ex_tb)))
+
     def start_spawn_if_required(self):
         for group in range(self.opts.build_groups_count):
-            max_vm_total = self.opts.build_groups[group]["max_vm_total"]
-            active_vmd_list = self.vmm.get_vm_by_group_and_state_list(
-                group, [VmStates.GOT_IP, VmStates.READY, VmStates.IN_USE, VmStates.CHECK_HEALTH])
-
-            # self.log("active VM#: {}".format(map(lambda x: (x.vm_name, x.state), active_vmd_list)))
-            if len(active_vmd_list) + self.vmm.spawner.children_number >= max_vm_total:
-                continue
-            last_vm_spawn_start = self.vmm.rc.hget(KEY_VM_POOL_INFO.format(group=group), "last_vm_spawn_start")
-            if last_vm_spawn_start:
-                since_last_spawn = time.time() - float(last_vm_spawn_start)
-                if since_last_spawn < Thresholds.vm_spawn_min_interval:
-                    self.log("time after previous spawn attempt < vm_spawn_min_interval")
-                    continue
-
-            if len(self.vmm.spawner.child_processes) >= self.opts.build_groups[group]["max_spawn_processes"]:
-                self.log("max_spawn_processes reached")
-                continue
-
-            if len(self.vmm.get_all_vm_in_group(group)) >= self.opts.build_groups[group]["max_vm_total"]:
-                self.log("fail save ALL VM >= max_vm_total reached")
-                self.log("all VM#: {}".format(map(str, self.vmm.get_all_vm_in_group(group))))
-                continue
-
-            self.log("start spawning new VM for group: {}".format(self.opts.build_groups[group]["name"]))
-            self.vmm.rc.hset(KEY_VM_POOL_INFO.format(group=group), "last_vm_spawn_start", time.time())
-            try:
-                self.vmm.spawner.start_spawn(group)
-            except Exception as err:
-                _, _, ex_tb = sys.exc_info()
-                self.log("Error during spawn attempt: {} {}".format(err, format_tb(err, ex_tb)))
+            self.try_spawn_one(group)
 
     def do_cycle(self):
         self.log("starting do_cycle")
-        # TOOD: start_vm_check could potentially produce vmd with check state in case of server crash
-        # so we need to restart check for VMD with health_check state + old age `last_health_check`
 
         # TODO: each check should be executed in threads ... and finish with join?
         # self.terminate_abandoned_vms()
@@ -126,11 +132,12 @@ class VmMaster(Process):
         self.check_vms_health()
         self.start_spawn_if_required()
 
-        self.restart_termination()
         self.finalize_long_health_checks()
+        self.terminate_again()
 
         self.vmm.spawner.recycle()
-        # self.vmm.terminator.recycle()
+
+        # todo: self.terminate_excessive_vms() -- for case when config changed during runtime
 
         # todo: self.terminate_old_unchecked_vms()
 
@@ -151,17 +158,12 @@ class VmMaster(Process):
                 self.do_cycle()
             except Exception as err:
                 self.log("Unhandled error: {}, {}".format(err, traceback.format_exc()))
-                #from celery.contrib import rdb; rdb.set_trace()
-                #x = 2
 
     def terminate(self):
         self.kill_received = True
         if self.event_handler:
             self.event_handler.terminate()
             self.event_handler.join()
-
-    def restart_termination(self):
-        pass
 
     def finalize_long_health_checks(self):
         """
@@ -171,7 +173,24 @@ class VmMaster(Process):
         for vmd in self.vmm.get_vm_by_group_and_state_list(None, [VmStates.CHECK_HEALTH]):
 
             time_elapsed = time.time() - float(vmd.get_field(self.vmm.rc, "last_health_check") or 0)
-            self.log("Checking for long health check, elapsed: {} VM: {}".format(time_elapsed, str(vmd)))
+            # self.log("Checking for long health check, elapsed: {} VM: {}".format(time_elapsed, str(vmd)))
             if time_elapsed > Thresholds.health_check_max_time:
                 self.vmm.mark_vm_check_failed(vmd.vm_name)
 
+    def terminate_again(self):
+        """
+        If we failed to terminate instance request termination once more.
+        Non-terminated instance detected as vm in the `terminating` state with time.time() - `terminating since` > Threshold
+        It's possible, that VM was terminated but termination process doesn't receive confirmation from VM provider,
+        but we have already got a new VM with the same IP => it's safe to remove old vm from pool
+        :return:
+        """
+
+        for vmd in self.vmm.get_vm_by_group_and_state_list(None, [VmStates.TERMINATING]):
+            time_elapsed = time.time() - float(vmd.get_field(self.vmm.rc, "terminating_since") or 0)
+            if time_elapsed > Thresholds.terminating_timeout:
+                if len(self.vmm.lookup_vms_by_ip(vmd.vm_ip)) > 1:
+                    # there are more VM with the same ip, it's safe to remove current one from VM pool
+                    self.vmm.remove_vm_from_pool(vmd.vm_name)
+                else:
+                    self.vmm.start_vm_termination(vmd.vm_name, allowed_pre_state=VmStates.TERMINATING)

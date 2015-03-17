@@ -69,10 +69,10 @@ end
 terminate_vm_lua = """
 local old_state = redis.call("HGET", KEYS[1], "state")
 
-if old_state == "terminating" then
-    return "Already terminating"
-elseif ARGV[1] and ARGV[1] ~= "None" and old_state ~= ARGV[1] then
+if ARGV[1] and ARGV[1] ~= "None" and old_state ~= ARGV[1] then
     return "Old state != `allowed_pre_state`"
+elseif old_state == "terminating" and ARGV[1] ~= "terminating" then
+    return "Already terminating"
 else
     redis.call("HMSET", KEYS[1], "state", "terminating", "terminating_since", ARGV[2])
     return "OK"
@@ -145,9 +145,15 @@ class VmManager(object):
         self.log("registered new VM: {}".format(vmd))
         return vmd
 
+    def lookup_vms_by_ip(self, vm_ip):
+        return [
+            vmd for vmd in self.get_all_vm()
+            if vmd.vm_ip == vm_ip
+        ]
+
     def start_vm_check(self, vm_name):
         """
-        Start VM health check sub-process if possible
+        Start VM health check sub-process if current VM state allows it
         """
 
         vmd = self.get_vm_by_name(vm_name)

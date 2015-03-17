@@ -90,6 +90,7 @@ class TestManager(object):
                              spawner=self.spawner,
                              terminator=self.terminator)
         self.vmm.post_init()
+        self.vmm.log = MagicMock()
         self.pid = 12345
 
     def teardown_method(self, method):
@@ -170,7 +171,6 @@ class TestManager(object):
             vmd.store_field(self.rc, "state", state)
             self.vmm.mark_vm_check_failed(self.vm_name)
             assert vmd.get_field(self.rc, "state") == state
-
 
     def test_start_vm_check_lua_ok_check_spawn_failed(self):
         self.vmm.start_vm_termination = types.MethodType(MagicMock(), self.vmm)
@@ -279,6 +279,22 @@ class TestManager(object):
         assert data["topic"] == EventTopics.VM_TERMINATION_REQUEST
         assert data["vm_name"] == self.vm_name
 
+    def test_start_vm_termination_2(self):
+        self.ps = self.vmm.rc.pubsub(ignore_subscribe_messages=True)
+        self.ps.subscribe(PUBSUB_MB)
+
+        vmd = self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
+        vmd.store_field(self.rc, "state", VmStates.TERMINATING)
+        self.vmm.start_vm_termination(self.vm_name, allowed_pre_state=VmStates.TERMINATING)
+        rcv_msg_list = self.rcv_from_ps_message_bus()
+        # print(rcv_msg_list)
+        assert len(rcv_msg_list) == 1
+        msg = rcv_msg_list[0]
+        assert msg["type"] == "message"
+        data = json.loads(msg["data"])
+        assert data["topic"] == EventTopics.VM_TERMINATION_REQUEST
+        assert data["vm_name"] == self.vm_name
+
     def test_start_vm_termination_fail(self):
         self.ps = self.vmm.rc.pubsub(ignore_subscribe_messages=True)
         self.ps.subscribe(PUBSUB_MB)
@@ -294,6 +310,12 @@ class TestManager(object):
         rcv_msg_list = self.rcv_from_ps_message_bus()
         assert len(rcv_msg_list) == 0
         assert vmd.get_field(self.rc, "state") == VmStates.READY
+
+        vmd.store_field(self.rc, "state", VmStates.TERMINATING)
+        self.vmm.start_vm_termination(self.vm_name)
+        rcv_msg_list = self.rcv_from_ps_message_bus()
+        assert len(rcv_msg_list) == 0
+        assert vmd.get_field(self.rc, "state") == VmStates.TERMINATING
 
     def test_remove_vm_from_pool_only_terminated(self):
         vmd = self.vmm.add_vm_to_pool(self.vm_ip, self.vm_name, self.group)
@@ -332,3 +354,24 @@ class TestManager(object):
         assert set(v.vm_name for v in vmd_list) == set(["b2"])
 
         self.vmm.info()
+
+    def test_look_up_vms_by_ip(self, f_second_group, capsys):
+        vmd_1 = self.vmm.add_vm_to_pool(self.vm_ip, "a1", self.group)
+        r1 = self.vmm.lookup_vms_by_ip(self.vm_ip)
+        assert len(r1) == 1
+        assert r1[0].vm_name == "a1"
+
+        vmd_2 = self.vmm.add_vm_to_pool(self.vm_ip, "a2", self.group)
+        r2 = self.vmm.lookup_vms_by_ip(self.vm_ip)
+        assert len(r2) == 2
+        r2 = sorted(r2, key=lambda vmd: vmd.vm_name)
+        assert r2[0].vm_name == "a1"
+        assert r2[1].vm_name == "a2"
+
+        vmd_3 = self.vmm.add_vm_to_pool("127.1.1.111", "b1", 1)
+
+        r3 = self.vmm.lookup_vms_by_ip(self.vm_ip)
+        assert len(r3) == 2
+        r3 = sorted(r3, key=lambda vmd: vmd.vm_name)
+        assert r3[0].vm_name == "a1"
+        assert r3[1].vm_name == "a2"

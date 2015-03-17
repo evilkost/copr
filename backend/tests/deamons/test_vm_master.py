@@ -136,12 +136,12 @@ class TestVmMaster(object):
 
     @pytest.fixture
     def add_vmd(self):
-        self.vmd_a1 = self.vmm.add_vm_to_pool(self.vm_ip, "a1", 0)
-        self.vmd_a2 = self.vmm.add_vm_to_pool(self.vm_ip, "a2", 0)
-        self.vmd_a3 = self.vmm.add_vm_to_pool(self.vm_ip, "a3", 0)
-        self.vmd_b1 = self.vmm.add_vm_to_pool(self.vm_ip, "b1", 1)
-        self.vmd_b2 = self.vmm.add_vm_to_pool(self.vm_ip, "b2", 1)
-        self.vmd_b3 = self.vmm.add_vm_to_pool(self.vm_ip, "b3", 1)
+        self.vmd_a1 = self.vmm.add_vm_to_pool("127.0.0.1", "a1", 0)
+        self.vmd_a2 = self.vmm.add_vm_to_pool("127.0.0.2", "a2", 0)
+        self.vmd_a3 = self.vmm.add_vm_to_pool("127.0.0.3", "a3", 0)
+        self.vmd_b1 = self.vmm.add_vm_to_pool("127.0.0.4", "b1", 1)
+        self.vmd_b2 = self.vmm.add_vm_to_pool("127.0.0.5", "b2", 1)
+        self.vmd_b3 = self.vmm.add_vm_to_pool("127.0.0.6", "b3", 1)
 
     def rcv_from_ps_message_bus(self):
         # don't forget to subscribe self.ps
@@ -278,8 +278,58 @@ class TestVmMaster(object):
         assert self.vmm.mark_vm_check_failed.called_once
         assert self.vmm.mark_vm_check_failed.call_args[0][0] == "a2"
 
+    def test_terminate_again(self, mc_time, add_vmd):
+        mc_time.time.return_value = 0
+        self.vmd_a1.store_field(self.rc, "state", VmStates.IN_USE)
+        self.vmd_a2.store_field(self.rc, "state", VmStates.CHECK_HEALTH)
+        self.vmd_a3.store_field(self.rc, "state", VmStates.READY)
 
+        mc_time.time.return_value = 1
+        self.vmm.remove_vm_from_pool = MagicMock()
+        self.vmm.start_vm_termination = MagicMock()
+        # case 1 no VM in terminating states =>
+        #   no start_vm_termination, no remove_vm_from_pool
+        # import ipdb; ipdb.set_trace()
+        self.vm_master.terminate_again()
+        assert not self.vmm.remove_vm_from_pool.called
+        assert not self.vmm.start_vm_termination.called
 
+        # case 2: one VM in terminating state with unique ip, time_elapsed < threshold
+        #   no start_vm_termination, no remove_vm_from_pool
+        self.vmd_a1.store_field(self.rc, "state", VmStates.TERMINATING)
+        self.vmd_a1.store_field(self.rc, "terminating_since", 0)
+
+        self.vm_master.terminate_again()
+        assert not self.vmm.remove_vm_from_pool.called
+        assert not self.vmm.start_vm_termination.called
+
+        # case 3: one VM in terminating state with unique ip, time_elapsed > threshold
+        #   start_vm_termination called, no remove_vm_from_pool
+        mc_time.time.return_value = 1 + Thresholds.terminating_timeout
+
+        self.vm_master.terminate_again()
+        assert not self.vmm.remove_vm_from_pool.called
+        assert self.vmm.start_vm_termination.called
+        assert self.vmm.start_vm_termination.call_args[0][0] == self.vmd_a1.vm_name
+
+        self.vmm.start_vm_termination.reset_mock()
+
+        # case 4: two VM with the same IP, one in terminating states, , time_elapsed < threshold
+        #   no start_vm_termination, no remove_vm_from_pool
+        mc_time.time.return_value = 1
+        self.vmd_a2.store_field(self.rc, "vm_ip", self.vmd_a1.vm_ip)
+
+        self.vm_master.terminate_again()
+        assert not self.vmm.remove_vm_from_pool.called
+        assert not self.vmm.start_vm_termination.called
+
+        # case 4: two VM with the same IP, one in terminating states, , time_elapsed > threshold
+        #   no start_vm_termination, remove_vm_from_pool
+        mc_time.time.return_value = 1 + Thresholds.terminating_timeout
+        self.vm_master.terminate_again()
+        assert self.vmm.remove_vm_from_pool.called
+        assert self.vmm.remove_vm_from_pool.call_args[0][0] == self.vmd_a1.vm_name
+        assert not self.vmm.start_vm_termination.called
 
 
     def test_run_undefined_helpers(self, mc_setproctitle):
@@ -337,4 +387,3 @@ class TestVmMaster(object):
         assert self.vm_master.start_spawn_if_required.called
 
         assert self.vmm.spawner.recycle.called
-

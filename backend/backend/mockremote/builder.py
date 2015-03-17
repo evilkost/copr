@@ -273,17 +273,14 @@ class Builder(object):
         self.ps = self.rc.pubsub(ignore_subscribe_messages=True)
         channel_name = PUBSUB_INTERRUPT_BUILDER.format(self.hostname)
         self.ps.subscribe(channel_name)
-        while self.ps.get_message() is not None:
-            self.ps.get_message()
 
         self.callback.log("Subscribed to {}".format(channel_name))
 
     def check_pubsub(self):
         self.callback.log("Checking pubsub channel")
         msg = self.ps.get_message()
-        if msg is not None:
-            if msg["type"] == "message":
-                raise VmError("Build interrupted by msg: {}".format(msg["data"]))
+        if msg is not None and msg.get("type") == "message":
+            raise VmError("Build interrupted by msg: {}".format(msg["data"]))
 
     # def start_build(self, pkg):
     #     # build the pkg passed in

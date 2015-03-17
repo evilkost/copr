@@ -33,6 +33,8 @@ from backend.mockremote.builder import Builder
 # patcher.stop()
 
 
+MODULE_REF = "backend.mockremote.builder"
+
 def noop(*args, **kwargs):
     pass
 
@@ -75,6 +77,7 @@ class TestBuilder(object):
         timeout=BUILDER_TIMEOUT,
         remote_basedir=BUILDER_REMOTE_BASEDIR,
         remote_tempdir=BUILDER_REMOTE_TMPDIR,
+        results_baseurl="http://example.com"
     )
 
     def get_test_builder(self):
@@ -96,6 +99,7 @@ class TestBuilder(object):
             hostname=self.BUILDER_HOSTNAME,
             job=self.job,
             callback=self.mc_callback,
+
         )
         builder.checked = True
         return builder
@@ -815,3 +819,52 @@ class TestBuilder(object):
         builder.collect_built_packages.side_effect = upd
         build_details, stdout = builder.build(self.BUILDER_PKG)
         assert build_details["foo"] == "bar"
+
+    def test_pre_process_repo_url(self):
+        builder = self.get_test_builder()
+
+        cases = [
+            ("", "''"),
+            ("http://copr-be.c.fp.org/results/rhughes/f20-gnome-3-12/fedora-$releasever-$basearch/",
+             "'http://copr-be.c.fp.org/results/rhughes/f20-gnome-3-12/fedora-$releasever-$basearch/'"),
+            ("http://copr-be.c.fp.org/results/rhughes/f20-gnome-3-12/$chroot/",
+             "http://copr-be.c.fp.org/results/rhughes/f20-gnome-3-12/{}/".format(self.job.chroot)),
+            ("http://copr-be.c.fp.org/results/rhughes/f20-gnome-3-12/$distname-$releasever-$basearch/",
+             "'http://copr-be.c.fp.org/results/rhughes/f20-gnome-3-12/fedora-$releasever-$basearch/'"),
+            ("copr://foo/bar",
+             "{}/foo/bar/fedora-20-i386".format(self.opts.results_baseurl)),
+        ]
+
+        for input_url, expected in cases:
+            assert builder.pre_process_repo_url(input_url) == expected
+
+        self.job.chroot = "fedora-20-rawhide"
+        cases = [
+            ("http://copr-be.c.fp.org/results/rhughes/f20-gnome-3-12/fedora-$releasever-$basearch/",
+             "'http://copr-be.c.fp.org/results/rhughes/f20-gnome-3-12/fedora-$releasever-$basearch/'"),
+            ("http://copr-be.c.fp.org/results/rhughes/f20-gnome-3-12/$chroot/",
+             "http://copr-be.c.fp.org/results/rhughes/f20-gnome-3-12/{}/".format(self.job.chroot)),
+            ("http://copr-be.c.fp.org/results/rhughes/f20-gnome-3-12/$distname-$releasever-$basearch/",
+             "'http://copr-be.c.fp.org/results/rhughes/f20-gnome-3-12/fedora-$releasever-$basearch/'"),
+        ]
+        for input_url, expected in cases:
+            expected = expected.replace("$releasever", "rawhide")
+            assert builder.pre_process_repo_url(input_url) == expected
+
+        with mock.patch("{}.urlparse".format(MODULE_REF)) as handle:
+            handle.side_effect = IOError
+            for input_url, _ in cases:
+                assert builder.pre_process_repo_url(input_url) is None
+
+    def test_check_pubsub_build_interruption(self):
+        builder = self.get_test_builder()
+        builder.callback = MagicMock()
+        builder.ps = MagicMock()
+        for val in [None, {}, {"foo": "bar"}, {"type": "subscribe"}]:
+            builder.ps.get_message.return_value = val
+            builder.check_pubsub()
+
+        builder.ps.get_message.return_value = {"type": "message", "data": ""}
+        with pytest.raises(VmError):
+            builder.check_pubsub()
+

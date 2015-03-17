@@ -56,27 +56,27 @@ def get_target_dir(chroot_dir, pkg_name):
     return os.path.normpath(os.path.join(chroot_dir, source_basename))
 
 
-class BuilderThread(object):
-    def __init__(self, builder_obj):
-        self.builder = builder_obj
-        self._running = False
-
-    def terminate(self):
-        self._running = False
-
-    def run(self):
-        self.builder.start_build()
-        self._running = True
-        state = None
-        while self._running:
-            state = self.builder.update_progress()
-            if state in ["done", "failed"]:
-                self._running = False
-            else:
-                time.sleep(5)
-
-        if state == "done":
-            self.builder.after_build()
+# class BuilderThread(object):
+#     def __init__(self, builder_obj):
+#         self.builder = builder_obj
+#         self._running = False
+#
+#     def terminate(self):
+#         self._running = False
+#
+#     def run(self):
+#         self.builder.start_build()
+#         self._running = True
+#         state = None
+#         while self._running:
+#             state = self.builder.update_progress()
+#             if state in ["done", "failed"]:
+#                 self._running = False
+#             else:
+#                 time.sleep(5)
+#
+#         if state == "done":
+#             self.builder.after_build()
 
 
 class MockRemote(object):

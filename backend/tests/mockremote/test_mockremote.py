@@ -25,6 +25,8 @@ from backend.mockremote.callback import DefaultCallBack
 from backend.job import BuildJob
 
 
+MODULE_REF = "backend.mockremote"
+
 def test_get_target_dir():
     for ch_dir, pkg_name, expected in [
         ("/tmp/", "copr-backend-1.46-1.git.35.8ba18d1.fc20.src.rpm",
@@ -220,6 +222,20 @@ class TestMockRemote(object):
 
         assert not os.path.exists(fail_path)
 
+    def test_prepare_build_dir_erase_success_file(self, f_mock_remote):
+        target_dir = os.path.join(
+            self.DESTDIR, self.CHROOT,
+            "{}-{}".format(self.PKG_NAME, self.PKG_VERSION))
+        os.makedirs(target_dir)
+        fail_path = os.path.join(target_dir, "success")
+        with open(fail_path, "w") as handle:
+            handle.write("1")
+        assert os.path.exists(fail_path)
+
+        self.mr.prepare_build_dir()
+
+        assert not os.path.exists(fail_path)
+
     def test_prepare_build_dir_creates_dirs(self, f_mock_remote):
         self.mr.prepare_build_dir()
         target_dir = os.path.join(
@@ -292,3 +308,8 @@ class TestMockRemote(object):
         assert os.path.exists(info_file_path)
         with open(info_file_path) as handle:
             assert str(self.JOB.build_id) in handle.read()
+
+        with mock.patch("__builtin__.open".format(MODULE_REF)) as mc_open:
+            mc_open.side_effect = IOError()
+            # do not raise an error
+            self.mr.mark_dir_with_build_id()

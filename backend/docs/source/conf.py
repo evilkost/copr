@@ -11,12 +11,35 @@
 # All configuration values have a default; values that are commented out
 # serve to show the default.
 
-import sys, os
+import sys
+import os
+from subprocess import call
+
+TO_INSTALL = [
+    # "redis",
+    "retask",
+    "ansible",
+]
+
+
+for pkg in TO_INSTALL:
+    print(call(["pip", "install", "--upgrade", pkg]))
+
+# on_rtd = os.environ.get('READTHEDOCS', None) == 'True'
+# if on_rtd:
+#     # html_theme = 'default'
+#     call("python ../../../python/setup.py install".split())
+# else:
+#     # html_theme = 'nature'
+#     pass
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 sys.path.insert(0, os.path.abspath('../..'))
+print(call(["ls", "-lah"]))
+sys.path.append(os.path.abspath('../../../python/'))
+
 
 # -- General configuration -----------------------------------------------------
 

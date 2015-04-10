@@ -1,12 +1,16 @@
 PyYAML
-ansible
+# ansible
 setproctitle
 redis
-retask
+# retask
+six
+mock
+requests
 python-daemon
 bunch
 IPy
-
+psutil
+lockfile
 
 # documentation
 sphinx

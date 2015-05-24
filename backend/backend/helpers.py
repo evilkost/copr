@@ -8,9 +8,13 @@ import logging
 import logging.handlers
 from operator import methodcaller
 import optparse
-import ConfigParser
+
 import os
 import sys
+
+# import ConfigParser
+from configparser import ConfigParser
+
 
 import traceback
 

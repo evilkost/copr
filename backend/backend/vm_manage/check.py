@@ -7,7 +7,7 @@ from threading import Thread
 
 import sys
 
-from ansible.runner import Runner
+# from ansible.runner import Runner
 
 from backend.helpers import get_redis_connection, format_tb
 from backend.vm_manage import PUBSUB_MB, EventTopics

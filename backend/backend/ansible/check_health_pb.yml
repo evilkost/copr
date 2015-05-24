@@ -1,0 +1,18 @@
+#- name: check/create instance
+#  hosts: 127.0.0.1
+#  gather_facts: False
+#
+#  tasks:
+#  - name: add vm ip to the special group
+#    local_action: add_host hostname={{ vm_ip }} groupname=builder_temp_group
+#
+
+- name: check_health
+  #  hosts: builder_temp_group
+  hosts: all
+  gather_facts: False
+  user: "{{ vm_user|default('root') }}"
+
+
+  tasks:
+  - shell: ps afx

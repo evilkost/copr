@@ -2,7 +2,7 @@ setproctitle
 PyYAML
 # ansible
 redis
-retask
+# retask
 python-daemon
 bunch
 IPy
@@ -11,3 +11,7 @@ sphinx
 sphinx-argparse
 netaddr
 psutil
+#pycrypto
+#plumbum
+pytest
+future

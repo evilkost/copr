@@ -1,7 +1,6 @@
 import copy
 import os
 
-
 class BuildJob(object):
 
     def __init__(self, task_data, worker_opts):

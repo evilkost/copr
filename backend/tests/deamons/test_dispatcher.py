@@ -326,12 +326,12 @@ class TestDispatcher(object):
     @mock.patch("backend.daemons.dispatcher.fedmsg")
     def test_init_fedmsg(self, mc_fedmsg, init_worker):
         self.worker.init_fedmsg()
-        assert not mc_fedmsg.init.called
+        assert not mc_fedmsg._init_store.called
         self.worker.opts.fedmsg_enabled = True
         self.worker.init_fedmsg()
-        assert mc_fedmsg.init.called
+        assert mc_fedmsg._init_store.called
 
-        mc_fedmsg.init.side_effect = KeyError()
+        mc_fedmsg._init_store.side_effect = KeyError()
         self.worker.init_fedmsg()
 
     def test_obtain_job(self, init_worker):

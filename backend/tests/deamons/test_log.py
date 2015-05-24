@@ -20,7 +20,7 @@ else:
 import pytest
 
 import backend.daemons.log as log_module
-from backend.daemons.log import CoprBackendLog, RedisLogHandler
+from backend.daemons.log import RedisLogHandler
 
 
 @pytest.yield_fixture
@@ -69,10 +69,6 @@ class TestLog(object):
 
         for handler in logging.root.handlers[:]:
             logging.root.removeHandler(handler)
-
-    @pytest.fixture
-    def init_log(self):
-        self.cbl = CoprBackendLog(self.opts, self.queue)
 
     # todo: replace with RedisLogHandler + helpers.get_redis_logger
     # def test_constructor(self):

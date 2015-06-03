@@ -1,6 +1,16 @@
 # -*- coding: utf-8 -*-
+from asyncio import coroutine
 import time
+
 from redis import StrictRedis
+from datetime import date
+from marshmallow import Schema, fields, pprint
+
+
+class BuildTaskSchema(Schema):
+    status = fields.Str()
+    chroot = fields.Str()
+
 
 """
 This module should be use with sync version of redis api
@@ -92,27 +102,34 @@ class BuildTask(object):
             "{}:`{}`".format(k.decode("utf-8"), v.decode("utf-8")) for k, v in
             self.redis_connection.hgetall(self.PREFIX + self.task_id).items()))
 
+BTI_SET_KEY = "copr_bt_index:set"
+BTI_SET_BY_VM_GROUP = "copr_bt_by_group:{}:set"
 
 class BuildTaskIndexes(object):
-    BTI_SET_KEY = "copr_bt_index:set"
-    BTI_SET_BY_VM_GROUP = "copr_bt_by_group:{}:set"
-
     def __init__(self, redis_connection: StrictRedis):
         self.redis_connection = redis_connection
 
     def __contains__(self, task_id):
-        return self.redis_connection.sismember(self.BTI_SET_KEY, task_id)
+        return self.redis_connection.sismember(BTI_SET_KEY, task_id)
 
     def insert(self, task_id, group):
-        self.redis_connection.sadd(self.BTI_SET_BY_VM_GROUP.format(group), task_id)
-        self.redis_connection.sadd(self.BTI_SET_KEY, task_id)
+        self.redis_connection.sadd(BTI_SET_BY_VM_GROUP.format(group), task_id)
+        self.redis_connection.sadd(BTI_SET_KEY, task_id)
 
     def remove(self, task_id):
-        return self.redis_connection.srem(self.BTI_SET_KEY, task_id)
+        return self.redis_connection.srem(BTI_SET_KEY, task_id)
 
     def get_all_by_group(self, group):
         return [task_id.decode("utf-8") for task_id in
-                self.redis_connection.smembers(self.BTI_SET_BY_VM_GROUP.format(group))]
+                self.redis_connection.smembers(BTI_SET_BY_VM_GROUP.format(group))]
+
+class AsyncBuildTaskIndexes(object):
+
+    @staticmethod
+    @coroutine
+    def get_pending_task_obj(async_rc):
+        pass
+
 
 def add_build_task(rc: StrictRedis, group: int, task_dict: dict):
     with rc.pipeline() as pipe:

@@ -15,3 +15,4 @@ psutil
 #plumbum
 pytest
 future
+marshmallow

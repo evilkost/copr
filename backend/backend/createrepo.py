@@ -70,9 +70,6 @@ APPDATA_CMD_TEMPLATE = \
     --api-version=0.8                         \
     --verbose                                 \
     --add-cache-id                            \
-    --min-icon-size=48                        \
-    --enable-hidpi                            \
-    --include-failed                          \
     --max-threads=4                           \
     --temp-dir={packages_dir}/tmp             \
     --cache-dir={packages_dir}/cache          \
@@ -81,6 +78,11 @@ APPDATA_CMD_TEMPLATE = \
     --basename=appstream                      \
     --origin={username}\/{projectname}
 """
+# not supported by current version in f21
+#     --include-failed                          \
+#     --min-icon-size=48                        \
+#     --enable-hidpi                            \
+
 
 MODIFYREPO_TEMPLATE = \
     """/usr/bin/modifyrepo_c \

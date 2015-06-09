@@ -103,7 +103,8 @@ def add_appdata(path, username, projectname, lock=None):
     return "\n".join([out_1, out_2])
 
 
-def createrepo(path, front_url, username, projectname, base_url=None, lock=None):
+def createrepo(path, front_url, username, projectname,
+               override_acr_flag=False, base_url=None, lock=None):
     """
         Creates repo depending on the project setting "auto_createrepo".
         When enabled creates `repodata` at the provided path, otherwise
@@ -121,7 +122,8 @@ def createrepo(path, front_url, username, projectname, base_url=None, lock=None)
 
     base_url = base_url or ""
 
-    if get_auto_createrepo_status(front_url, username, projectname):
+    acr_flag = get_auto_createrepo_status(front_url, username, projectname)
+    if override_acr_flag or acr_flag:
         out_cr = createrepo_unsafe(path, lock)
         out_ad = add_appdata(path, username, projectname, lock)
         return "\n".join([out_cr, out_ad])

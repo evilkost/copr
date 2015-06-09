@@ -1,29 +1,37 @@
 import os
 import subprocess
-from subprocess import Popen
+from subprocess import Popen, PIPE
 from exceptions import CreateRepoError
+
+from plumbum import local
 from shlex import split
+
 
 from .helpers import get_auto_createrepo_status
 
 
 def run_cmd_unsafe(comm_str, lock=None):
-    comm = split(comm_str)
+    # comm = split(comm_str)
+    parts = split(comm_str)
+    cmd, flags =parts[0], parts[1:]
+    ab = local['/usr/bin/appstream-builder']
+
     try:
-        # todo: replace with file lock on target dir
-        if lock:
-            with lock:
-                cmd = Popen(comm, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                out, err = cmd.communicate()
-        else:
-            cmd = Popen(comm, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            out, err = cmd.communicate()
+        ab(*flags)
+        # # todo: replace with file lock on target dir
+        # if lock:
+        #     with lock:
+        #         cmd = Popen(comm, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        #         out, err = cmd.communicate()
+        # else:
+        #     cmd = Popen(comm, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        #     out, err = cmd.communicate()
     except Exception as err:
-        raise CreateRepoError(msg="Failed to execute: {}".format(err), cmd=comm)
+        raise CreateRepoError(msg="Failed to execute: {}".format(err), cmd=comm_str)
 
     if cmd.returncode != 0:
         raise CreateRepoError(msg="exit code != 0",
-                              cmd=comm, exit_code=cmd.returncode,
+                              cmd=comm_str, exit_code=cmd.returncode,
                               stdout=out, stderr=err)
     return out
 
@@ -75,14 +83,13 @@ APPDATA_CMD_TEMPLATE = \
     --cache-dir={packages_dir}/cache          \
     --packages-dir={packages_dir}             \
     --output-dir={packages_dir}/appdata       \
-    --basename=appstream                      \
-    --origin={username}\/{projectname}
+    --basename=appstream
 """
 # not supported by current version in f21
 #     --include-failed                          \
 #     --min-icon-size=48                        \
 #     --enable-hidpi                            \
-
+#     --origin={username}/{projectname}
 
 MODIFYREPO_TEMPLATE = \
     """/usr/bin/modifyrepo_c \

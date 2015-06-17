@@ -89,7 +89,7 @@ APPDATA_CMD_TEMPLATE = \
     --cache-dir={packages_dir}/cache          \
     --packages-dir={packages_dir}             \
     --output-dir={packages_dir}/appdata       \
-    --basename=appstream
+    --basename=appstream                      \
     --batch
 """
 # not supported by current version in f21

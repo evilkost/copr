@@ -1,31 +1,37 @@
 import os
 import subprocess
 from subprocess import Popen, PIPE
+import logging
+
 from exceptions import CreateRepoError
 
-from plumbum import local
+# from plumbum import local
 from shlex import split
 
 
 from .helpers import get_auto_createrepo_status
 
 
+def print_debug(msg):
+    with open("/tmp/cr.log", "a") as handle:
+        handle.write("{}\n".format(msg))
+
 def run_cmd_unsafe(comm_str, lock=None):
     # comm = split(comm_str)
-    parts = split(comm_str)
-    cmd, flags =parts[0], parts[1:]
-    ab = local['/usr/bin/appstream-builder']
-
+    comm = parts = split(comm_str)
+    # cmd, flags =parts[0], parts[1:]
+    # ab = local['/usr/bin/appstream-builder']
+    print_debug("Comm: {}".format(comm))
     try:
-        ab(*flags)
+        # out = ab(*flags)
         # # todo: replace with file lock on target dir
-        # if lock:
-        #     with lock:
-        #         cmd = Popen(comm, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-        #         out, err = cmd.communicate()
-        # else:
-        #     cmd = Popen(comm, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-        #     out, err = cmd.communicate()
+        if lock:
+            with lock:
+                cmd = Popen(comm, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                out, err = cmd.communicate()
+        else:
+            cmd = Popen(comm, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            out, err = cmd.communicate()
     except Exception as err:
         raise CreateRepoError(msg="Failed to execute: {}".format(err), cmd=comm_str)
 
@@ -84,6 +90,7 @@ APPDATA_CMD_TEMPLATE = \
     --packages-dir={packages_dir}             \
     --output-dir={packages_dir}/appdata       \
     --basename=appstream
+    --batch
 """
 # not supported by current version in f21
 #     --include-failed                          \

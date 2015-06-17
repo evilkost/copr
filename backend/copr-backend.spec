@@ -86,7 +86,7 @@ Requires:   crontabs
 Requires:   python-paramiko
 # Requires:   python-ipdb
 Requires:   logstash
-Requires:   libappstream-glib-builder
+Requires:   libappstream-glib-builder >= 0.4.0
 # Requires:   python-plumbum
 
 Requires(post): systemd

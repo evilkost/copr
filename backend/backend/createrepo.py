@@ -1,29 +1,19 @@
 import os
 import subprocess
 from subprocess import Popen, PIPE
-import logging
 
 from exceptions import CreateRepoError
 
-# from plumbum import local
 from shlex import split
 
 
 from .helpers import get_auto_createrepo_status
 
-
-def print_debug(msg):
-    with open("/tmp/cr.log", "a") as handle:
-        handle.write("{}\n".format(msg))
+# todo: add logging here
 
 def run_cmd_unsafe(comm_str, lock=None):
-    # comm = split(comm_str)
-    comm = parts = split(comm_str)
-    # cmd, flags =parts[0], parts[1:]
-    # ab = local['/usr/bin/appstream-builder']
-    print_debug("Comm: {}".format(comm))
+    comm = split(comm_str)
     try:
-        # out = ab(*flags)
         # # todo: replace with file lock on target dir
         if lock:
             with lock:
@@ -80,29 +70,26 @@ def createrepo_unsafe(path, lock=None, dest_dir=None, base_url=None):
 
 
 APPDATA_CMD_TEMPLATE = \
-    """/usr/bin/appstream-builder             \
-    --api-version=0.8                         \
-    --verbose                                 \
-    --add-cache-id                            \
-    --max-threads=4                           \
-    --temp-dir={packages_dir}/tmp             \
-    --cache-dir={packages_dir}/cache          \
-    --packages-dir={packages_dir}             \
-    --output-dir={packages_dir}/appdata       \
-    --basename=appstream                      \
-    --batch
+    """/usr/bin/appstream-builder \
+--api-version=0.8 \
+--verbose \
+--add-cache-id \
+--max-threads=4 \
+--temp-dir={packages_dir}/tmp \
+--cache-dir={packages_dir}/cache \
+--packages-dir={packages_dir} \
+--output-dir={packages_dir}/appdata \
+--basename=appstream \
+--include-failed \
+--min-icon-size=48 \
+--enable-hidpi \
+--origin={username}/{projectname}
 """
-# not supported by current version in f21
-#     --include-failed                          \
-#     --min-icon-size=48                        \
-#     --enable-hidpi                            \
-#     --origin={username}/{projectname}
-
 MODIFYREPO_TEMPLATE = \
     """/usr/bin/modifyrepo_c \
-    --no-compress \
-    {packages_dir}/appdata/appstream.xml.gz \
-    {packages_dir}/repodata
+--no-compress \
+{packages_dir}/appdata/appstream.xml.gz \
+{packages_dir}/repodata
 """
 
 

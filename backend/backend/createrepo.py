@@ -5,9 +5,10 @@ from subprocess import Popen, PIPE
 from exceptions import CreateRepoError
 from shlex import split
 
-import logging
-log = logging.getLogger(__name__)
-log.setHandler(logging.NullHandler())
+from backend.helpers import BackendConfigReader, get_redis_logger
+opts = BackendConfigReader().read()
+
+log = get_redis_logger(opts, "createrepo", "actions")
 
 from .helpers import get_auto_createrepo_status
 

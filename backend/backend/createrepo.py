@@ -3,15 +3,18 @@ import subprocess
 from subprocess import Popen, PIPE
 
 from exceptions import CreateRepoError
-
 from shlex import split
 
+import logging
+log = logging.getLogger(__name__)
+log.setHandler(logging.NullHandler())
 
 from .helpers import get_auto_createrepo_status
 
 # todo: add logging here
 
 def run_cmd_unsafe(comm_str, lock=None):
+    log.info("Running command: {}".format(comm_str))
     comm = split(comm_str)
     try:
         # # todo: replace with file lock on target dir

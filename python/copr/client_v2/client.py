@@ -17,8 +17,9 @@ import six
 from six.moves import configparser
 # from requests_toolbelt.multipart.encoder import MultipartEncoder
 
-from .entities import parse_root, ProjectHandle, RootEntity
-from client_v2.common import EntityTypes
+from .resources import Root
+from .handlers import ProjectHandle
+from .common import EntityTypes
 from .net_client import NetClient
 
 if sys.version_info < (2, 7):
@@ -31,15 +32,6 @@ else:
 from ..exceptions import CoprConfigException, CoprNoConfException, \
     CoprRequestException, \
     CoprUnknownResponseException
-
-
-
-# from .responses import ProjectHandle, \
-#     CoprResponse, BuildHandle, BaseHandle, ProjectChrootHandle
-#
-# from .parsers import fabric_simple_fields_parser, ProjectListParser, \
-#     CommonMsgErrorOutParser, NewBuildListParser, ProjectChrootsParser, \
-#    ProjectDetailsFieldsParser
 
 from ..util import UnicodeMixin
 
@@ -149,7 +141,7 @@ class CoprClient(UnicodeMixin):
         log.debug("Getting root resources")
         response = self.nc.request(self.api_root)
 
-        self.root = parse_root(response, self.root_url)
+        self.root = Root.from_response(response, self.root_url)
         self.projects = ProjectHandle(self.nc, self.root.get_resource_base_url(u"projects"))
 
         # import ipdb; ipdb.set_trace()

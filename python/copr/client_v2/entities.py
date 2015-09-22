@@ -2,7 +2,7 @@
 
 from ..util import UnicodeMixin
 
-from .schemas import ProjectSchema, EmptySchema
+from .schemas import ProjectSchema, EmptySchema, ProjectChrootSchema
 
 
 class Link(UnicodeMixin):
@@ -17,7 +17,7 @@ class Link(UnicodeMixin):
             self.role, self.target_type, self.href)
 
     @classmethod
-    def parse_from_dict(cls, data_dict, map_name_to_role):
+    def from_dict(cls, data_dict, map_name_to_role):
         """
         {
             "self": {
@@ -57,28 +57,28 @@ class Entity(UnicodeMixin):
     @classmethod
     def from_dict(cls, raw_dict):
         parsed = cls._schema.load(raw_dict)
-        return cls(**parsed.data)
+        obj = cls()
+        for field, value in parsed.data.items():
+            setattr(obj, field, value)
+        return obj
 
 
 class ProjectEntity(Entity):
-    """
-    :type handle: client_v2.handlers.ProjectHandle
-    """
 
     _schema = ProjectSchema(strict=True)
 
-    def __init__(self, **kwargs):
-
-        self.id = kwargs.get("id")
-        self.name = kwargs.get("name")
-        self.owner = kwargs.get("owner")
-        self.description = kwargs.get("description")
-        self.instructions = kwargs.get("instructions")
-        self.homepage = kwargs.get("homepage")
-        self.contact = kwargs.get("contact")
-        self.disable_createrepo = kwargs.get("disable_creatrepo")
-        self.build_enable_net = kwargs.get("build_enable_net")
-        self.repos = kwargs.get("repos")
-
     def __unicode__(self):
         return "<Project #{}: {}/{}>".format(self.id, self.owner, self.name)
+
+
+class ProjectChrootEntity(Entity):
+
+    _schema = ProjectChrootSchema(strict=True)
+
+    def __unicode__(self):
+        return "<Project chroot: {}, additional " \
+               "packages: {}, comps size if any: {}>".format(
+            self.name,
+            self.buildroot_pkgs,
+            self.comps_len,
+        )

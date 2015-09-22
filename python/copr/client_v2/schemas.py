@@ -32,3 +32,12 @@ class ProjectSchema(Schema):
     repos = fields.List(fields.Str())
 
 
+class ProjectChrootSchema(Schema):
+
+    name = fields.Str(load_only=True)
+    buildroot_pkgs = fields.List(fields.Str())
+
+
+    comps = fields.Str(allow_none=True)
+    comps_name = fields.Str(allow_none=True)
+    comps_len = fields.Int(load_only=True, allow_none=True)

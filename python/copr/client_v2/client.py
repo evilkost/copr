@@ -142,6 +142,8 @@ class CoprClient(UnicodeMixin):
         response = self.nc.request(self.api_root)
 
         self.root = Root.from_response(response, self.root_url)
-        self.projects = ProjectHandle(self.nc, self.root.get_resource_base_url(u"projects"))
+        self.projects = ProjectHandle(self.nc, root_url=self.root_url,
+                                      base_url=self.root.get_resource_base_url(u"projects"),)
+
 
         # import ipdb; ipdb.set_trace()

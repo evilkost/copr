@@ -114,6 +114,7 @@ class ProjectCreateSchema(ProjectSchema):
     chroots = SpaceSeparatedList(load_only=True, default=list)
 
 
+# todo: rename to ProjectChrootSchema
 class CoprChrootSchema(Schema):
 
     buildroot_pkgs = SpaceSeparatedList()

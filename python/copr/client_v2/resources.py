@@ -4,7 +4,7 @@ from collections import Iterable
 from ..util import UnicodeMixin
 
 from .common import EntityTypes
-from .entities import Link, ProjectEntity
+from .entities import Link, ProjectEntity, ProjectChrootEntity
 from .schemas import EmptySchema
 
 
@@ -39,6 +39,9 @@ class IndividualResource(UnicodeMixin):
         else:
             raise KeyError(item)
 
+    def __unicode__(self):
+        return self._entity.__unicode__()
+
     def get_href_by_name(self, name):
         """
         :type name: str
@@ -65,7 +68,7 @@ class Root(IndividualResource):
         :type root_url: unicode
         """
         data_dict = response.json
-        links = Link.parse_from_dict(data_dict["_links"], {
+        links = Link.from_dict(data_dict["_links"], {
             "self": EntityTypes.ROOT,
             "projects": EntityTypes.PROJECT,
             "builds": EntityTypes.BUILD,
@@ -78,7 +81,7 @@ class Root(IndividualResource):
 class Project(IndividualResource):
     """
     :type entity: ProjectEntity
-    :type handle: client_v2.handlers.ProjectHandle
+    :type handle: copr.client_v2.handlers.ProjectHandle
     """
     def __init__(self, entity, handle, **kwargs):
         super(Project, self).__init__(entity=entity, handle=handle, **kwargs)
@@ -94,16 +97,43 @@ class Project(IndividualResource):
     def get_self(self):
         return self._handle.get_one(self.id, **self._options)
 
-    def __unicode__(self):
-        return self._entity.__unicode__()
+    def get_project_chroot(self, name):
+        chroot_handle = self._handle.get_project_chroot_handle(self)
+        return chroot_handle.get_one(name=name)
+
+    def get_project_chroot_list(self):
+        chroot_handle = self._handle.get_project_chroot_handle(self)
+        return chroot_handle.get_list()
 
     @classmethod
     def from_response(cls, handle, response, data_dict, options=None):
-        links = Link.parse_from_dict(data_dict["_links"], {
+        links = Link.from_dict(data_dict["_links"], {
             "self": EntityTypes.PROJECT,
             "builds": EntityTypes.BUILD,
+            "chroots": EntityTypes.PROJECT_CHROOT,
         })
         entity = ProjectEntity.from_dict(data_dict["project"])
+        # import ipdb; ipdb.set_trace()
+        return cls(entity=entity, handle=handle, response=response, links=links, options=options)
+
+
+class ProjectChroot(IndividualResource):
+    """
+    :type entity: copr.client_v2.entities.ProjectChrootEntity
+    :type handle: copr.client_v2.handlers.ProjectChrootHandle
+    """
+    def __init__(self, entity, handle, **kwargs):
+        super(ProjectChroot, self).__init__(entity=entity, handle=handle, **kwargs)
+        self._entity = entity
+        self._handle = handle
+
+    @classmethod
+    def from_response(cls, handle, response, data_dict, options=None):
+        links = Link.from_dict(data_dict["_links"], {
+            "self": EntityTypes.PROJECT_CHROOT,
+            "project": EntityTypes.PROJECT,
+        })
+        entity = ProjectChrootEntity.from_dict(data_dict["chroot"])
         return cls(entity=entity, handle=handle, response=response, links=links, options=options)
 
 
@@ -143,14 +173,8 @@ class CollectionResource(Iterable, UnicodeMixin):
 
 class ProjectsList(CollectionResource):
     """
-    :type handle: client_v2.handlers.ProjectHandle
+    :type handle: copr.client_v2.handlers.ProjectHandle
     """
-
-    # def __iter__(self):
-    #     """
-    #     :rtype: Iterable[ProjectEntity]
-    #     """
-    #     return super(ProjectsList, self).__iter__()
 
     def __init__(self, handle, **kwargs):
         super(ProjectsList, self).__init__(**kwargs)
@@ -172,3 +196,16 @@ class ProjectsList(CollectionResource):
 
         return self._handle.get_list(self, **params)
 
+
+class ProjectChrootList(CollectionResource):
+    """
+    :type handle: coprclient_v2.handlers.ProjectChrootHandle
+    """
+
+    def __init__(self, handle, **kwargs):
+        super(ProjectChrootList, self).__init__(**kwargs)
+        self._handle = handle
+
+    @property
+    def chroots(self):
+        return self._individuals

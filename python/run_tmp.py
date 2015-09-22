@@ -1,5 +1,11 @@
 # coding: utf-8
 
+from logging import basicConfig, getLogger
+
+basicConfig()
+log = getLogger(__name__)
+
+
 #from copr.client_v2.client import CoprClient
 # from copr.client_v2.entities import ProjectEntity
 
@@ -26,6 +32,8 @@ def main():
         project = client.projects.get_one(2262)
         #
         pp(project)
+        # import ipdb; ipdb.set_trace()
+        x = 2
 
     # res = project.update()
     # print(res)
@@ -46,11 +54,26 @@ def main():
 
 
 
-    # t1()
-    t2()
+    #t1()
+    # t2()
+
+    def t4():
+        project = client.projects.get_one(3554)
+        #pp(project)
+        #print(project._response.json)
+
+        name = "fedora-21-x86_64"
+        #pc = project.get_project_chroot(name)
+        #print(pc)
+        for pc in project.get_project_chroot_list():
+            print(pc)
 
 
+    t4()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        log.exception("something went wrong")

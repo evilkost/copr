@@ -2,21 +2,21 @@
 
 from .common import EntityTypes
 from .entities import Link
-from .resources import Project, OperationResult, ProjectsList
+from .resources import Project, OperationResult, ProjectsList, ProjectChroot, ProjectChrootList
 
 
 class AbstractHandle(object):
-    pass
+    """
+    :type nc: copr.client_v2.net_client.NetClient
+    """
+    def __init__(self, nc, root_url, base_url, ):
+
+        self.nc = nc
+        self.root_url = root_url
+        self.base_url = base_url
 
 
 class ProjectHandle(AbstractHandle):
-    """
-    :type nc: NetClient
-    """
-    def __init__(self, nc, base_url):
-
-        self.nc = nc
-        self.base_url = base_url
 
     def get_list(self, search_query=None, owner=None, name=None, limit=None, offset=None):
         """
@@ -37,7 +37,7 @@ class ProjectHandle(AbstractHandle):
         result = ProjectsList(
             self,
             response=response,
-            links=Link.parse_from_dict(data_dict["_links"], {
+            links=Link.from_dict(data_dict["_links"], {
                 "self": EntityTypes.PROJECT,
                 "builds": EntityTypes.BUILD,
             }),
@@ -71,6 +71,13 @@ class ProjectHandle(AbstractHandle):
             options=query_params
         )
 
+    def get_project_chroot_handle(self, project):
+        """
+        :type project: copr.client_v2.resources.Project
+        """
+        base_url = "{}{}".format(self.root_url, project.get_href_by_name("chroots"))
+        return ProjectChrootHandle(self.nc, self.root_url, base_url)
+
     def update(self, project):
         """
         :type project: ProjectEntity
@@ -85,3 +92,52 @@ class ProjectHandle(AbstractHandle):
         url = "{}/{}".format(self.base_url, project_id)
         response = self.nc.request(url, method="delete", do_auth=True)
         return OperationResult(self, response)
+
+
+class ProjectChrootHandle(AbstractHandle):
+
+    def get_one(self, name):
+        """
+        :type project: copr.client_v2.resources.Project
+        :param str name: chroot name
+        """
+
+        url = "{}/{}".format(self.base_url, name)
+        response = self.nc.request(url)
+
+        return ProjectChroot.from_response(
+            handle=self,
+            response=response,
+            data_dict=response.json,
+        )
+
+    def get_list(self):
+        response = self.nc.request(self.base_url)
+        data_dict = response.json
+        return ProjectChrootList(
+            self,
+            response=response,
+            links=Link.from_dict(data_dict["_links"], {
+                "self": EntityTypes.PROJECT_CHROOT,
+            }),
+            individuals=[
+                ProjectChroot.from_response(
+                    handle=self,
+                    response=None,
+                    data_dict=dict_part
+                )
+                for dict_part in data_dict["chroots"]
+            ]
+        )
+
+    def disable(self, name):
+        pass
+
+    def enable(self, name):
+        pass
+
+    def update(self, project_chroot):
+        """
+        :type project_chroot: copr.client_v2.entities.ProjectChrootEntity
+        """
+        pass

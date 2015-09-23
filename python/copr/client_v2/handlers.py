@@ -1,4 +1,5 @@
 # coding: utf-8
+from abc import abstractmethod, ABCMeta
 
 from .common import EntityTypes
 from .entities import Link
@@ -7,16 +8,31 @@ from .resources import Project, OperationResult, ProjectsList, ProjectChroot, Pr
 
 class AbstractHandle(object):
     """
+    :param client: Should be used only to access other handlers
+    :type client: copr.client_v2.client.HandlersProvider
     :type nc: copr.client_v2.net_client.NetClient
     """
-    def __init__(self, nc, root_url, base_url, ):
+    __metaclass__ = ABCMeta
 
+    def __init__(self, client, nc, root_url):
+        self.client = client
         self.nc = nc
         self.root_url = root_url
-        self.base_url = base_url
+
+    @abstractmethod
+    def get_base_url(self, *args, **kwargs):
+        pass
 
 
 class ProjectHandle(AbstractHandle):
+
+    def __init__(self, client, nc, root_url, projects_href):
+        super(ProjectHandle, self).__init__(client, nc, root_url)
+        self.projects_href = projects_href
+        self._base_url = "{}{}".format(self.root_url, projects_href)
+
+    def get_base_url(self):
+        return self._base_url
 
     def get_list(self, search_query=None, owner=None, name=None, limit=None, offset=None):
         """
@@ -32,7 +48,7 @@ class ProjectHandle(AbstractHandle):
             options["limit"] = limit
         # todo: add other
 
-        response = self.nc.request(self.base_url, query_params=options)
+        response = self.nc.request(self.get_base_url(), query_params=options)
         data_dict = response.json
         result = ProjectsList(
             self,
@@ -62,7 +78,7 @@ class ProjectHandle(AbstractHandle):
             "show_chroots": show_chroots
         }
 
-        url = "{}/{}".format(self.base_url, project_id)
+        url = "{}/{}".format(self.get_base_url(), project_id)
         response = self.nc.request(url, query_params=query_params)
         return Project.from_response(
             handle=self,
@@ -71,38 +87,50 @@ class ProjectHandle(AbstractHandle):
             options=query_params
         )
 
-    def get_project_chroot_handle(self, project):
+    def update(self, project_entity):
         """
-        :type project: copr.client_v2.resources.Project
+        :type project_entity: ProjectEntity
         """
-        base_url = "{}{}".format(self.root_url, project.get_href_by_name("chroots"))
-        return ProjectChrootHandle(self.nc, self.root_url, base_url)
-
-    def update(self, project):
-        """
-        :type project: ProjectEntity
-        """
-        url = "{}/{}".format(self.base_url, project.id)
-        data = project.to_json()
+        url = "{}/{}".format(self.get_base_url(), project_entity.id)
+        data = project_entity.to_json()
 
         response = self.nc.request(url, method="put", data=data, do_auth=True)
         return OperationResult(self, response)
 
     def delete(self, project_id):
-        url = "{}/{}".format(self.base_url, project_id)
+        url = "{}/{}".format(self.get_base_url(), project_id)
         response = self.nc.request(url, method="delete", do_auth=True)
         return OperationResult(self, response)
+
+    def get_project_chroot(self, project, name):
+        """
+        :type project: copr.client_v2.resources.Project
+        :param str name: chroot name
+        """
+        return self.client.project_chroots.get_one(project, name)
+
+    def get_project_chroot_list(self, project):
+        """
+        :type project: copr.client_v2.resources.Project
+        """
+        return self.client.project_chroots.get_list(project)
 
 
 class ProjectChrootHandle(AbstractHandle):
 
-    def get_one(self, name):
+    def get_base_url(self, project):
+        """
+        :type project: copr.client_v2.resources.Project
+        """
+        return "{}{}".format(self.root_url, project.get_href_by_name("chroots"))
+
+    def get_one(self, project, name):
         """
         :type project: copr.client_v2.resources.Project
         :param str name: chroot name
         """
 
-        url = "{}/{}".format(self.base_url, name)
+        url = "{}/{}".format(self.get_base_url(project), name)
         response = self.nc.request(url)
 
         return ProjectChroot.from_response(
@@ -111,8 +139,11 @@ class ProjectChrootHandle(AbstractHandle):
             data_dict=response.json,
         )
 
-    def get_list(self):
-        response = self.nc.request(self.base_url)
+    def get_list(self, project):
+        """
+        :type project: copr.client_v2.resources.Project
+        """
+        response = self.nc.request(self.get_base_url(project))
         data_dict = response.json
         return ProjectChrootList(
             self,
@@ -130,14 +161,21 @@ class ProjectChrootHandle(AbstractHandle):
             ]
         )
 
-    def disable(self, name):
-        pass
-
-    def enable(self, name):
-        pass
-
-    def update(self, project_chroot):
+    def disable(self, project, name):
         """
-        :type project_chroot: copr.client_v2.entities.ProjectChrootEntity
+        :type project: copr.client_v2.resources.Project
+        """
+        pass
+
+    def enable(self, project, name):
+        """
+        :type project: copr.client_v2.resources.Project
+        """
+        pass
+
+    def update(self, project, chroot_entity):
+        """
+        :type project: copr.client_v2.resources.Project
+        :type chroot_entity: copr.client_v2.entities.ProjectChrootEntity
         """
         pass

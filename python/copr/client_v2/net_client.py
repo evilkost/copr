@@ -5,15 +5,16 @@ from logging import getLogger
 
 from requests import request, ConnectionError
 
+from ..util import UnicodeMixin
 
 log = getLogger(__name__)
 
 
-class RequestError(Exception):
-    def __init__(self, msg, url, request_kwargs, response=None):
+class RequestError(Exception, UnicodeMixin):
+    def __init__(self, msg, url, request_kwargs=None, response=None):
         self.msg = msg
         self.url = url
-        self.request_kwargs = request_kwargs
+        self.request_kwargs = request_kwargs or dict()
         self.response = response
 
     @property
@@ -34,15 +35,12 @@ class RequestError(Exception):
             res += "code {}: {}\n".format(self.response.status_code, self.response_json["message"])
         return res
 
-    def __str__(self):
-        return self.__unicode__()
-
 
 class NetworkError(RequestError):
     def __init__(self, url, request_kwargs, requests_error):
         self.requests_error = requests_error
         super(NetworkError, self).__init__(
-            u"Connection error", url, request_kwargs, response=None)
+            u"Connection error", url, request_kwargs)
 
     def __unicode__(self):
         res = super(NetworkError, self).__unicode__()
@@ -62,8 +60,8 @@ class ResponseWrapper(object):
         :raises ValueError: when fails to deserialize json content
         """
         self.response = response
-        if response.status_code != 204:
-            self.json = response.json()
+        if response.status_code != 204 and response.content:
+            self.json = json.loads(response.content)
         else:
             self.json = None
 
@@ -93,12 +91,13 @@ class NetClient(object):
         if method is None:
             method = "get"
         elif method not in ["get", "post", "delete", "put"]:
-            raise Exception("Method {0} not allowed".format(method))
+            raise RequestError("Method {0} not allowed".format(method), url)
 
         kwargs = {}
         if do_auth:
             if self.login is None or self.token is None:
-                raise RequestError("Credentionals for BasicAuth not set, request aborted",
+                raise RequestError("Credentionals for BasicAuth "
+                                   "not set, request aborted",
                                    url, kwargs)
             kwargs["auth"] = (self.login, self.token)
         if query_params:

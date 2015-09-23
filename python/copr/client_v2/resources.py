@@ -98,12 +98,10 @@ class Project(IndividualResource):
         return self._handle.get_one(self.id, **self._options)
 
     def get_project_chroot(self, name):
-        chroot_handle = self._handle.get_project_chroot_handle(self)
-        return chroot_handle.get_one(name=name)
+        return self._handle.get_project_chroot(self, name)
 
     def get_project_chroot_list(self):
-        chroot_handle = self._handle.get_project_chroot_handle(self)
-        return chroot_handle.get_list()
+        return self._handle.get_project_chroot_list(self)
 
     @classmethod
     def from_response(cls, handle, response, data_dict, options=None):

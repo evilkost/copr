@@ -4,21 +4,23 @@ from __future__ import print_function
 from __future__ import unicode_literals
 from __future__ import division
 from __future__ import absolute_import
+from abc import ABCMeta, abstractproperty
 
 import json
 import sys
 import os
 import logging
+import weakref
 from marshmallow import pprint
 
-import requests
 import six
-
+from six import with_metaclass
 from six.moves import configparser
+
 # from requests_toolbelt.multipart.encoder import MultipartEncoder
 
 from .resources import Root
-from .handlers import ProjectHandle
+from .handlers import ProjectHandle, ProjectChrootHandle
 from .common import EntityTypes
 from .net_client import NetClient
 
@@ -39,7 +41,32 @@ log = logging.getLogger(__name__)
 log.addHandler(NullHandler())
 
 
-class CoprClient(UnicodeMixin):
+class HandlersProvider(with_metaclass(ABCMeta)):
+
+    @abstractproperty
+    def projects(self):
+        """
+        :rtype: ProjectHandle
+        """
+        pass
+
+    @abstractproperty
+    def project_chroots(self):
+        """
+        :rtype: ProjectChrootHandle
+        """
+        pass
+
+    @abstractproperty
+    def builds(self):
+        pass
+
+    # @abstractproperty
+    # def build_tasks(self):
+    #     pass
+
+
+class CoprClient(UnicodeMixin, HandlersProvider):
     """ Main interface to the copr service
 
     :param NetClient net_client: wrapper for http requests
@@ -61,14 +88,35 @@ class CoprClient(UnicodeMixin):
         self.root_url = root_url or u"http://copr.fedoraproject.org"
 
         self.no_config = no_config
+        self._post_init_done = False
 
         self._main_resources = None
 
         self.root = None
-        """:type : RootEntity or None """
 
-        self.projects = None
-        """:type : ProjectHandle or None """
+        self._projects = None
+        self._project_chroots = None
+        self._builds = None
+
+    def _check_client_init(self):
+        if not self._post_init_done:
+            raise RuntimeError("CoprClient wasn't initialized, use class-methods "
+                               "create_from* to get instance of CoprClient")
+
+    @property
+    def projects(self):
+        self._check_client_init()
+        return self._projects
+
+    @property
+    def project_chroots(self):
+        self._check_client_init()
+        return self._project_chroots
+
+    @property
+    def builds(self):
+        self._check_client_init()
+        return self._builds
 
     def __unicode__(self):
         return (
@@ -116,7 +164,7 @@ class CoprClient(UnicodeMixin):
             if not ignore_error:
                 raise CoprNoConfException()
             else:
-                client = cls.create_from_params()
+                return cls.create_from_params()
         else:
             try:
                 for field in ["login", "token", "copr_url"]:
@@ -132,18 +180,27 @@ class CoprClient(UnicodeMixin):
                     raise CoprConfigException(
                         "Bad configuration file: {0}".format(err))
                 else:
-                    client = cls.create_from_params()
+                    return cls.create_from_params()
 
         client.post_init()
         return client
 
     def post_init(self):
+
         log.debug("Getting root resources")
+
         response = self.nc.request(self.api_root)
 
+        # obtain api info info
         self.root = Root.from_response(response, self.root_url)
-        self.projects = ProjectHandle(self.nc, root_url=self.root_url,
-                                      base_url=self.root.get_resource_base_url(u"projects"),)
+
+        # instantiating handlers
+        self._projects = ProjectHandle(
+            weakref.proxy(self), self.nc, root_url=self.root_url,
+            projects_href=self.root.get_resource_base_url(u"projects"),)
+        self._project_chroots = ProjectChrootHandle(
+            weakref.proxy(self), self.nc, root_url=self.root_url)
+        
 
 
-        # import ipdb; ipdb.set_trace()
+        self._post_init_done = True

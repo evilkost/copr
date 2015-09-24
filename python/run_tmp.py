@@ -1,6 +1,8 @@
 # coding: utf-8
 
 from logging import basicConfig, getLogger
+import time
+from copr.client_v2.net_client import RequestError
 
 basicConfig()
 log = getLogger(__name__)
@@ -53,7 +55,6 @@ def main():
             print("==")
 
 
-
     #t1()
     # t2()
 
@@ -68,12 +69,45 @@ def main():
         for pc in project.get_project_chroot_list():
             print(pc)
 
+    def t5():
+        build = client.builds.get_one(117578)
+        #build._handle.cancel(build._entity)
+        build._handle.delete(build.id)
+        #import ipdb; ipdb.set_trace()
+        build = client.builds.get_one(117578)
+        print(build)
 
-    t4()
+    # t5()
 
+    def t6():
+
+        project = client.projects.get_one("4642")
+        print(project)
+
+        # new_c = project.get_project_chroot("epel-5-x86_64")
+        # print(new_c)
+        # new_c.disable()
+        # time.sleep(3)
+
+        for pc in project.get_project_chroot_list():
+            print(pc)
+            pc.disable()
+
+
+
+        x = 2
+
+
+    t6()
 
 if __name__ == "__main__":
     try:
         main()
+    except RequestError as err:
+        log.exception(err)
+        log.error("error occurred while fetching: {}, with params: {}"
+                  .format(err.url, err.request_kwargs))
+        log.error("status code: {}, message: {} {}"
+                  .format(err.response.status_code, err.msg, err.response_json))
     except Exception:
         log.exception("something went wrong")

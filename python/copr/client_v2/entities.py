@@ -1,8 +1,7 @@
 # coding: utf-8
-
 from ..util import UnicodeMixin
 
-from .schemas import ProjectSchema, EmptySchema, ProjectChrootSchema
+from .schemas import ProjectSchema, EmptySchema, ProjectChrootSchema, BuildSchema, BuildTaskSchema
 
 
 class Link(UnicodeMixin):
@@ -49,10 +48,14 @@ class Entity(UnicodeMixin):
     _schema = EmptySchema()
 
     def to_dict(self):
-        return self._schema.dump(self)
+        return self._schema.dump(self).data
 
     def to_json(self):
-        return self._schema.dumps(self)
+        return self._schema.dumps(self).data
+
+    @classmethod
+    def constructor(cls, **kwargs):
+        return cls.from_dict(kwargs)
 
     @classmethod
     def from_dict(cls, raw_dict):
@@ -81,4 +84,22 @@ class ProjectChrootEntity(Entity):
             self.name,
             self.buildroot_pkgs,
             self.comps_len,
+        )
+
+
+class BuildEntity(Entity):
+
+    _schema = BuildSchema(strict=True)
+
+    def __unicode__(self):
+        return "<Build #{} state: {}>".format(self.id, self.state)
+
+
+class BuildTaskEntity(Entity):
+
+    _schema = BuildTaskSchema(strict=True)
+
+    def __unicode__(self):
+        return "<Build task #{}-{}, state: {}>".format(
+            self.build_id, self.chroot_name, self.state
         )

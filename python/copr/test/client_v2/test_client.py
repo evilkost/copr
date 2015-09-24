@@ -98,4 +98,3 @@ class TestClientV2(object):
 
     def test_fixture_tc(self, tc):
         pass
-

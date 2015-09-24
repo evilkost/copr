@@ -4,7 +4,7 @@ from collections import Iterable
 from ..util import UnicodeMixin
 
 from .common import EntityTypes
-from .entities import Link, ProjectEntity, ProjectChrootEntity
+from .entities import Link, ProjectEntity, ProjectChrootEntity, BuildEntity
 from .schemas import EmptySchema
 
 
@@ -78,6 +78,34 @@ class Root(IndividualResource):
         return Root(response=response, links=links, root_url=root_url)
 
 
+class Build(IndividualResource):
+    """
+    :type entity: BuildEntity
+    :type handle: copr.client_v2.handlers.BuildHandle
+    """
+    def __init__(self, entity, handle, **kwargs):
+        super(Build, self).__init__(entity=entity, handle=handle, **kwargs)
+        self._entity = entity
+        self._handle = handle
+
+    @classmethod
+    def from_response(cls, handle, response, data_dict, options=None):
+        links = Link.from_dict(data_dict["_links"], {
+            "self": EntityTypes.BUILD,
+            "project": EntityTypes.PROJECT,
+            "build_tasks": EntityTypes.BUILD_TASK,
+        })
+        entity = BuildEntity.from_dict(data_dict["build"])
+        return cls(entity=entity, handle=handle,
+                   response=response, links=links, options=options)
+
+    def cancel(self):
+        return self._handle.cancel(self._entity)
+
+    def delete(self):
+        return self._handle.delete(self.id)
+
+
 class Project(IndividualResource):
     """
     :type entity: ProjectEntity
@@ -103,6 +131,10 @@ class Project(IndividualResource):
     def get_project_chroot_list(self):
         return self._handle.get_project_chroot_list(self)
 
+    def enable_project_chroot(self, *args, **kwargs):
+        return self._handle.enable_chroot(self, *args, **kwargs)
+
+
     @classmethod
     def from_response(cls, handle, response, data_dict, options=None):
         links = Link.from_dict(data_dict["_links"], {
@@ -112,7 +144,8 @@ class Project(IndividualResource):
         })
         entity = ProjectEntity.from_dict(data_dict["project"])
         # import ipdb; ipdb.set_trace()
-        return cls(entity=entity, handle=handle, response=response, links=links, options=options)
+        return cls(entity=entity, handle=handle,
+                   response=response, links=links, options=options)
 
 
 class ProjectChroot(IndividualResource):
@@ -120,26 +153,50 @@ class ProjectChroot(IndividualResource):
     :type entity: copr.client_v2.entities.ProjectChrootEntity
     :type handle: copr.client_v2.handlers.ProjectChrootHandle
     """
-    def __init__(self, entity, handle, **kwargs):
+    def __init__(self, entity, handle, project, **kwargs):
         super(ProjectChroot, self).__init__(entity=entity, handle=handle, **kwargs)
         self._entity = entity
         self._handle = handle
+        self._project = project
 
     @classmethod
-    def from_response(cls, handle, response, data_dict, options=None):
+    def from_response(cls, handle, response, data_dict, project, options=None):
         links = Link.from_dict(data_dict["_links"], {
             "self": EntityTypes.PROJECT_CHROOT,
             "project": EntityTypes.PROJECT,
         })
         entity = ProjectChrootEntity.from_dict(data_dict["chroot"])
-        return cls(entity=entity, handle=handle, response=response, links=links, options=options)
+        return cls(entity=entity, handle=handle, project=project,
+                   response=response, links=links, options=options)
+
+    def disable(self):
+        return self._handle.disable(self._project, self.name)
+
+    def update(self):
+        return self._handle.update(self._project, self._entity)
 
 
 class OperationResult(IndividualResource):
 
-    def __init__(self, handle, response=None, entity=None, new_location=None, options=None):
+    # TODO: app param expected_status=200 and method is_successful() which would compare
+    # obtained status with expected one
+    def __init__(self, handle, response=None, entity=None, options=None):
         super(OperationResult, self).__init__(handle=handle, response=response, entity=entity, options=options)
-        self.new_location = new_location
+
+    @property
+    def new_location(self):
+        if self._response and self._response.headers and "location" in self._response:
+            return self._response.headers["location"]
+
+        return None
+
+    def __unicode__(self):
+        out = u"<Result: "
+        if self._response:
+            out += u" status: {}".format(self._response.status_code)
+        out += u">"
+
+        return out
 
 
 class CollectionResource(Iterable, UnicodeMixin):
@@ -162,6 +219,18 @@ class CollectionResource(Iterable, UnicodeMixin):
         """
         return self._links[name].href
 
+    def next_page(self):
+        limit = self._options.get("limit", 100)
+        offset = self._options.get("offset", 0)
+
+        offset += limit
+        params = {}
+        params.update(self._options)
+        params["limit"] = limit
+        params["offset"] = offset
+
+        return self._handle.get_list(self, **params)
+
     def __iter__(self):
         """
         :rtype: Iterable[IndividualResource]
@@ -182,17 +251,18 @@ class ProjectsList(CollectionResource):
     def projects(self):
         return self._individuals
 
-    def next_page(self):
-        limit = self._options.get("limit", 100)
-        offset = self._options.get("offset", 0)
 
-        offset += limit
-        params = {}
-        params.update(self._options)
-        params["limit"] = limit
-        params["offset"] = offset
+class BuildList(CollectionResource):
+    """
+    :type handle: copr.client_v2.handler.BuildHandle
+    """
+    def __init__(self, handle, **kwargs):
+        super(BuildList, self).__init__(**kwargs)
+        self._handle = handle
 
-        return self._handle.get_list(self, **params)
+    @property
+    def builds(self):
+        return self._individuals
 
 
 class ProjectChrootList(CollectionResource):
@@ -200,10 +270,14 @@ class ProjectChrootList(CollectionResource):
     :type handle: coprclient_v2.handlers.ProjectChrootHandle
     """
 
-    def __init__(self, handle, **kwargs):
+    def __init__(self, handle, project, **kwargs):
         super(ProjectChrootList, self).__init__(**kwargs)
         self._handle = handle
+        self._project = project
 
     @property
     def chroots(self):
         return self._individuals
+
+    def enable(self, name):
+        return self._handle.enable(self._project, name)

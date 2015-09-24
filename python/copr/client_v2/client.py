@@ -20,7 +20,7 @@ from six.moves import configparser
 # from requests_toolbelt.multipart.encoder import MultipartEncoder
 
 from .resources import Root
-from .handlers import ProjectHandle, ProjectChrootHandle
+from .handlers import ProjectHandle, ProjectChrootHandle, BuildHandle
 from .common import EntityTypes
 from .net_client import NetClient
 
@@ -197,10 +197,12 @@ class CoprClient(UnicodeMixin, HandlersProvider):
         # instantiating handlers
         self._projects = ProjectHandle(
             weakref.proxy(self), self.nc, root_url=self.root_url,
-            projects_href=self.root.get_resource_base_url(u"projects"),)
+            projects_href=self.root.get_href_by_name(u"projects"),)
         self._project_chroots = ProjectChrootHandle(
             weakref.proxy(self), self.nc, root_url=self.root_url)
-        
+        self._builds = BuildHandle(
+            weakref.proxy(self), self.nc, root_url=self.root_url,
+            builds_href=self.root.get_href_by_name(u"builds"),)
 
 
         self._post_init_done = True

@@ -43,6 +43,7 @@ class SpaceSeparatedList(fields.Field):
         else:
             return " ".join(value)
 
+
 class BuiltPackages(fields.Field):
     """ stored in db as a string:
     "python3-marshmallow 2.0.0b5\npython-marshmallow 2.0.0b5"

@@ -1,5 +1,4 @@
 # coding: utf-8
-import json
 
 import os
 import copy
@@ -10,7 +9,7 @@ import time
 
 import six
 import sys
-
+import json
 
 if six.PY3:
     from unittest import mock

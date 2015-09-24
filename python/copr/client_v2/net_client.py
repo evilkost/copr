@@ -15,6 +15,8 @@ class RequestError(Exception, UnicodeMixin):
         self.msg = msg
         self.url = url
         self.request_kwargs = request_kwargs or dict()
+        if "auth" in self.request_kwargs:
+            self.request_kwargs["auth"] = "<hidden>"
         self.response = response
 
     @property
@@ -90,8 +92,8 @@ class NetClient(object):
 
         if method is None:
             method = "get"
-        elif method not in ["get", "post", "delete", "put"]:
-            raise RequestError("Method {0} not allowed".format(method), url)
+        elif method.lower() not in ["get", "post", "delete", "put"]:
+            raise RequestError("Method {} not allowed".format(method), url)
 
         kwargs = {}
         if do_auth:

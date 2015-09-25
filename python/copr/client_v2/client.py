@@ -59,6 +59,9 @@ class HandlersProvider(with_metaclass(ABCMeta)):
 
     @abstractproperty
     def builds(self):
+        """
+        :rtype: BuildHandle
+        """
         pass
 
     # @abstractproperty

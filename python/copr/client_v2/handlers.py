@@ -1,7 +1,10 @@
 # coding: utf-8
 from abc import abstractmethod, ABCMeta
+import json
+import os
 
 from .common import EntityTypes
+from copr.client_v2.net_client import RequestError, MultiPartTuple
 from .entities import Link, ProjectChrootEntity
 from .resources import Project, OperationResult, ProjectsList, ProjectChroot, ProjectChrootList, Build, BuildList
 
@@ -35,7 +38,7 @@ class BuildHandle(AbstractHandle):
 
     def get_one(self, build_id):
         """
-        :type project_id: int
+        :type build_id: int
         """
 
         options = {"build_id": build_id}
@@ -96,7 +99,111 @@ class BuildHandle(AbstractHandle):
     def delete(self, build_id):
         url = "{}/{}".format(self.get_base_url(), build_id)
         response = self.nc.request(url, method="delete", do_auth=True)
-        return OperationResult(self, response)
+        return OperationResult(self, response, expected_status=204)
+
+    def _process_create_response(self, request_data, response):
+        op_result = OperationResult(self, response, expected_status=201)
+        if op_result.is_successful():
+            build_response = self.nc.get(op_result.new_location)
+            return Build.from_response(
+                handle=self, response=build_response,
+                data_dict=build_response.json
+            )
+        else:
+            raise RequestError(
+                "Got unexpected status code at create build request",
+                url=self.get_base_url(),
+                request_body=request_data, response=response
+            )
+
+    def create_from_url(self, project_id, srpm_url,
+                        chroots=None, enable_net=True):
+
+        chroots = map(str, chroots or list())
+        content = {
+            "project_id": int(project_id),
+            "srpm_url": str(srpm_url),
+            "chroots": chroots,
+            "enable_net": bool(enable_net)
+        }
+        data = json.dumps(content)
+        response = self.nc.request(
+            self.get_base_url(),
+            data=data, method="POST", do_auth=True,
+        )
+
+        return self._process_create_response(data, response)
+        #
+        # op_result = OperationResult(self, response, expected_status=201)
+        # if op_result.is_successful():
+        #     build_response = self.nc.get(op_result.new_location)
+        #     return Build.from_response(
+        #         handle=self, response=build_response,
+        #         data_dict=build_response.json
+        #     )
+        # else:
+        #     raise RequestError(
+        #         "Got unexpected status code at create build request",
+        #         url=self.get_base_url(),
+        #         request_body=data, response=response
+        #     )
+
+    def create_from_file(self, project_id, file_path=None, file_obj=None, file_name=None,
+                         chroots=None, enable_net=True):
+        """
+        Creates new build using srpm upload, please specify
+        either `file_path` or (`file_obj`, `file_name).
+
+        :param int project_id:
+        :param str file_path: path to the srpm file
+        :param file like object file_obj:
+        :param str file_name:
+        :param list chroots:
+        :param bool enable_net:
+        :return: created build
+        :rtype: Build
+        """
+
+        chroots = map(str, chroots or list())
+        content = {
+            "project_id": int(project_id),
+            "chroots": chroots,
+            "enable_net": bool(enable_net)
+        }
+
+        metadata = MultiPartTuple(
+            "metadata", name=None,
+            obj=json.dumps(content), content_type="application/json")
+
+        f = None
+        try:
+            if file_path is not None:
+                f = open(file_path, "rb")
+                f_obj = f
+                f_name = os.path.basename(f.name)
+            elif file_obj is not None and file_name is not None:
+                f_name = file_name
+                f_obj = file_obj
+            else:
+                raise RuntimeError("Please provide file_path or file_obj and file_name")
+
+            srpm = MultiPartTuple("srpm", name=f_name, obj=f_obj,
+                                  content_type="appliction/x-rpm")
+
+            parts = [metadata, srpm]
+
+            response = self.nc.request_multipart(
+                url=self.get_base_url(),
+                method="POST",
+                data_parts=parts,
+                do_auth=True,
+            )
+
+        finally:
+            if f:
+                f.close()
+
+        return self._process_create_response(parts, response)
 
 
 class ProjectHandle(AbstractHandle):
@@ -254,7 +361,7 @@ class ProjectChrootHandle(AbstractHandle):
         :param str name: chroot name to disable
         """
         url = "{}/{}".format(self.get_base_url(project), name)
-        response = self.nc.request(url, method="delete", do_auth=True)
+        response = self.nc.request(url, method="DELETE", do_auth=True)
         return OperationResult(self, response)
 
     def enable(self, project, name, buildroot_pkgs=None):

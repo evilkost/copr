@@ -1,9 +1,11 @@
 # coding: utf-8
+from collections import namedtuple
 import json
 
 from logging import getLogger
 
 from requests import request, ConnectionError
+from requests_toolbelt.multipart.encoder import MultipartEncoder
 
 from ..util import UnicodeMixin
 
@@ -11,9 +13,10 @@ log = getLogger(__name__)
 
 
 class RequestError(Exception, UnicodeMixin):
-    def __init__(self, msg, url, request_kwargs=None, response=None):
+    def __init__(self, msg, url, request_kwargs=None, response=None, request_body=None):
         self.msg = msg
         self.url = url
+        self.request_body = request_body
         self.request_kwargs = request_kwargs or dict()
         if "auth" in self.request_kwargs:
             self.request_kwargs["auth"] = "<hidden>"
@@ -21,14 +24,21 @@ class RequestError(Exception, UnicodeMixin):
 
     @property
     def response_json(self):
-        if self.response is None:
-            raise ValueError("No response")
-        try:
-            result = json.loads(self.response.text)
-        except (ValueError, AttributeError):
-            raise ValueError("Malformed response, couldn't get json content")
+        if self.response.headers["content-type"] == "application/json":
+            if self.response is None:
+                raise ValueError("No response")
+            try:
+                result = json.loads(self.response.text)
+            except (ValueError, AttributeError):
+                raise ValueError(
+                    "Malformed response, couldn't "
+                    "get json content, raw:\n{}"
+                    .format(self.response.text)
+                )
 
-        return result
+            return result
+        else:
+            return None
 
     def __unicode__(self):
         res = "Error occurred while accessing {}: {}\n".format(
@@ -75,6 +85,8 @@ class ResponseWrapper(object):
     def headers(self):
         return self.response.headers
 
+MultiPartTuple = namedtuple("MultiPartTuple", ["key", "name", "obj", "content_type"])
+
 
 class NetClient(object):
     """
@@ -88,7 +100,25 @@ class NetClient(object):
         self.login = login
         self.token = password
 
-    def request(self, url, method=None, query_params=None, data=None, do_auth=False):
+    def request_multipart(self, url, method=None, query_params=None,
+                          data_parts=None, do_auth=False):
+        """
+        :type data_parts: list of MultiPartTuple
+
+        """
+        parts = {}
+        for key, name, obj, content_type in data_parts:
+            parts[key] = (name, obj, content_type)
+
+        # import ipdb; ipdb.set_trace()
+        data = MultipartEncoder(parts)
+        headers = {
+            "content-type": data.content_type
+        }
+        return self.request(url, method=method, query_params=query_params,
+                            data=data, do_auth=do_auth, headers=headers)
+
+    def request(self, url, method=None, query_params=None, data=None, do_auth=False, headers=None):
 
         if method is None:
             method = "get"
@@ -96,6 +126,7 @@ class NetClient(object):
             raise RequestError("Method {} not allowed".format(method), url)
 
         kwargs = {}
+        headers = headers or {}
         if do_auth:
             if self.login is None or self.token is None:
                 raise RequestError("Credentionals for BasicAuth "
@@ -106,11 +137,14 @@ class NetClient(object):
             kwargs["params"] = query_params
         if data:
             kwargs["data"] = data
+            if "content-type" not in headers:
+                headers["content-type"] = "application/json"
 
         try:
             response = request(
                 method=method.upper(),
                 url=url,
+                headers=headers,
                 **kwargs
             )
             log.debug("raw response: {0}".format(response.text))
@@ -120,10 +154,16 @@ class NetClient(object):
         if response.status_code == 403:
             raise AuthError(url, kwargs, response)
 
+        if response.status_code >= 500:
+            raise RequestError("Server error", url, kwargs, response)
+
         if response.status_code > 399:
-            raise RequestError("", url, kwargs, response)
+            raise RequestError("Request error", url, kwargs, response)
 
         try:
             return ResponseWrapper(response)
         except ValueError:
             raise RequestError("Failed to parse server response", url, kwargs, response)
+
+    def get(self, url, query_params=None):
+        return self.request(url, query_params=query_params)

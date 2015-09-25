@@ -99,6 +99,9 @@ class Build(IndividualResource):
         return cls(entity=entity, handle=handle,
                    response=response, links=links, options=options)
 
+    def get_self(self):
+        return self._handle.get_one(self.id)
+
     def cancel(self):
         return self._handle.cancel(self._entity)
 
@@ -180,15 +183,24 @@ class OperationResult(IndividualResource):
 
     # TODO: app param expected_status=200 and method is_successful() which would compare
     # obtained status with expected one
-    def __init__(self, handle, response=None, entity=None, options=None):
+    def __init__(self, handle, response=None, entity=None, options=None, expected_status=200):
         super(OperationResult, self).__init__(handle=handle, response=response, entity=entity, options=options)
+        self.expected_status = expected_status
 
     @property
     def new_location(self):
-        if self._response and self._response.headers and "location" in self._response:
+        if self._response and \
+                self._response.headers and \
+                "location" in self._response.headers:
             return self._response.headers["location"]
 
         return None
+
+    def is_successful(self):
+        if self._response and self._response.status_code == self.expected_status:
+            return True
+        else:
+            return False
 
     def __unicode__(self):
         out = u"<Result: "

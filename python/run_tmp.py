@@ -3,7 +3,7 @@
 from logging import basicConfig, getLogger
 import time
 from copr.client_v2.net_client import RequestError
-
+from copr.client_v2.resources import Build
 basicConfig()
 log = getLogger(__name__)
 
@@ -12,6 +12,7 @@ log = getLogger(__name__)
 # from copr.client_v2.entities import ProjectEntity
 
 from copr import create_client2_from_params
+
 
 def main():
     copr_url = "http://copr-fe-dev.cloud.fedoraproject.org"
@@ -98,7 +99,33 @@ def main():
         x = 2
 
 
-    t6()
+    #
+    def t7():
+
+        srpm = "http://miroslav.suchy.cz/copr/copr-ping-1-1.fc20.src.rpm"
+
+        b = client.builds.create_from_url(project_id=4007, srpm_url=srpm)
+        """:type: Build"""
+        print(b)
+        b.cancel()
+        b = b.get_self()
+        print(b)
+        #op = b.delete()
+        #print(op)
+
+    # t7()
+
+    def t8():
+
+        srpm = "/tmp/tito/copr-backend-1.73.tar.gz"
+        b = client.builds.create_from_file(project_id=4007, file_path=srpm)
+        print(b)
+        b.cancel()
+        b = b.get_self()
+        print(b)
+
+    t8()
+
 
 if __name__ == "__main__":
     try:

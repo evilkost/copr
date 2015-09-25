@@ -133,20 +133,6 @@ class BuildHandle(AbstractHandle):
         )
 
         return self._process_create_response(data, response)
-        #
-        # op_result = OperationResult(self, response, expected_status=201)
-        # if op_result.is_successful():
-        #     build_response = self.nc.get(op_result.new_location)
-        #     return Build.from_response(
-        #         handle=self, response=build_response,
-        #         data_dict=build_response.json
-        #     )
-        # else:
-        #     raise RequestError(
-        #         "Got unexpected status code at create build request",
-        #         url=self.get_base_url(),
-        #         request_body=data, response=response
-        #     )
 
     def create_from_file(self, project_id, file_path=None, file_obj=None, file_name=None,
                          chroots=None, enable_net=True):
@@ -305,6 +291,24 @@ class ProjectHandle(AbstractHandle):
         :type project: copr.client_v2.resources.Project
         """
         return self.client.project_chroots.enable(project, *args, **kwargs)
+
+    # def create_build_from_file(self, project, *args, **kwargs):
+    #     """
+    #     See additional options `:py:method:BuildHandle.create_from_file:`
+    #     """
+    #     return self.client.builds.create_from_file(project.id, *args, **kwargs)
+    #
+    # def create_build_from_url(self, project, *args, **kwargs):
+    #     """
+    #     See additional options `:py:method:BuildHandle.create_from_url:`
+    #     """
+    #     return self.client.builds.create_from_url(project.id, *args, **kwargs)
+
+    def get_builds_handle(self):
+        """
+        :rtype: BuildHandle
+        """
+        return self.client.builds
 
 
 class ProjectChrootHandle(AbstractHandle):

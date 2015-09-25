@@ -93,7 +93,7 @@ class BuildListR(Resource):
                                        .format(err))
         except InsufficientRightsException as err:
             db.session.rollback()
-            raise AccessForbidden("User {} cannon create build in project {}: {}"
+            raise AccessForbidden("User {} cannot create build in project {}: {}"
                                   .format(flask.g.user.username,
                                           project.full_name, err))
         return build.id

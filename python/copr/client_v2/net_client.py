@@ -110,7 +110,6 @@ class NetClient(object):
         for key, name, obj, content_type in data_parts:
             parts[key] = (name, obj, content_type)
 
-        # import ipdb; ipdb.set_trace()
         data = MultipartEncoder(parts)
         headers = {
             "content-type": data.content_type

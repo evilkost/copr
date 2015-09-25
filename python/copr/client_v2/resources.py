@@ -137,6 +137,13 @@ class Project(IndividualResource):
     def enable_project_chroot(self, *args, **kwargs):
         return self._handle.enable_chroot(self, *args, **kwargs)
 
+    # TODO: remove proxy methods on the handle classes
+    def create_build_from_file(self, *args, **kwargs):
+        """
+        See additional options `:py:method:BuildHandle.create_from_file:`
+        """
+        builds = self._handle.get_builds_handle()
+        builds.create_from_file(self.id, *args, **kwargs)
 
     @classmethod
     def from_response(cls, handle, response, data_dict, options=None):

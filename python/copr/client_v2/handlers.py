@@ -68,23 +68,7 @@ class BuildHandle(AbstractHandle):
         }
 
         response = self.nc.request(self.get_base_url(), query_params=options)
-        data_dict = response.json
-        result = BuildList(
-            self,
-            response=response,
-            links=Link.from_dict(data_dict["_links"], {
-                "self": EntityTypes.BUILD,
-            }),
-            individuals=[
-                Build.from_response(
-                    handle=self,
-                    response=None,
-                    data_dict=dict_part,
-                )
-                for dict_part in data_dict["builds"]
-            ]
-        )
-        return result
+        return BuildList.from_response(self, response, options)
 
     def cancel(self, build_entity):
         """
@@ -221,24 +205,7 @@ class ProjectHandle(AbstractHandle):
         }
 
         response = self.nc.request(self.get_base_url(), query_params=options)
-        data_dict = response.json
-        result = ProjectsList(
-            self,
-            response=response,
-            links=Link.from_dict(data_dict["_links"], {
-                "self": EntityTypes.PROJECT,
-            }),
-            individuals=[
-                Project.from_response(
-                    handle=self,
-                    response=None,
-                    data_dict=dict_part,
-                )
-                for dict_part in data_dict["projects"]
-            ],
-            options=None
-        )
-        return result
+        return ProjectsList.from_response(self, response, options)
 
     def get_one(self, project_id, show_builds=False, show_chroots=False):
         """
@@ -273,43 +240,17 @@ class ProjectHandle(AbstractHandle):
         response = self.nc.request(url, method="delete", do_auth=True)
         return OperationResult(self, response)
 
-    def get_project_chroot(self, project, name):
-        """
-        :type project: copr.client_v2.resources.Project
-        :param str name: chroot name
-        :rtype: copr.client_v2.resources.ProjectChroot
-        """
-        return self.client.project_chroots.get_one(project, name)
-
-    def get_project_chroot_list(self, project):
-        """
-        :type project: copr.client_v2.resources.Project
-        """
-        return self.client.project_chroots.get_list(project)
-
-    def enable_chroot(self, project, *args, **kwargs):
-        """
-        :type project: copr.client_v2.resources.Project
-        """
-        return self.client.project_chroots.enable(project, *args, **kwargs)
-
-    # def create_build_from_file(self, project, *args, **kwargs):
-    #     """
-    #     See additional options `:py:method:BuildHandle.create_from_file:`
-    #     """
-    #     return self.client.builds.create_from_file(project.id, *args, **kwargs)
-    #
-    # def create_build_from_url(self, project, *args, **kwargs):
-    #     """
-    #     See additional options `:py:method:BuildHandle.create_from_url:`
-    #     """
-    #     return self.client.builds.create_from_url(project.id, *args, **kwargs)
-
     def get_builds_handle(self):
         """
         :rtype: BuildHandle
         """
         return self.client.builds
+
+    def get_project_chroots_handle(self):
+        """
+        :rtype: ProjectChrootHandle
+        """
+        return self.client.project_chroots
 
 
 class ProjectChrootHandle(AbstractHandle):
@@ -341,23 +282,10 @@ class ProjectChrootHandle(AbstractHandle):
         :type project: copr.client_v2.resources.Project
         """
         response = self.nc.request(self.get_base_url(project))
-        data_dict = response.json
-        return ProjectChrootList(
-            self,
-            project=project,
+        return ProjectChrootList.from_response(
+            handle=self,
             response=response,
-            links=Link.from_dict(data_dict["_links"], {
-                "self": EntityTypes.PROJECT_CHROOT,
-            }),
-            individuals=[
-                ProjectChroot.from_response(
-                    handle=self,
-                    response=None,
-                    data_dict=dict_part,
-                    project=project
-                )
-                for dict_part in data_dict["chroots"]
-            ]
+            project=project
         )
 
     def disable(self, project, name):

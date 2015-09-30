@@ -129,13 +129,16 @@ class Project(IndividualResource):
         return self._handle.get_one(self.id, **self._options)
 
     def get_project_chroot(self, name):
-        return self._handle.get_project_chroot(self, name)
+        handle = self._handle.get_project_chroots_handle()
+        return handle.get_one(self, name)
 
     def get_project_chroot_list(self):
-        return self._handle.get_project_chroot_list(self)
+        handle = self._handle.get_project_chroots_handle()
+        return handle.get_list(self)
 
     def enable_project_chroot(self, *args, **kwargs):
-        return self._handle.enable_chroot(self, *args, **kwargs)
+        handle = self._handle.get_project_chroots_handle()
+        return handle.enable(self, *args, **kwargs)
 
     # TODO: remove proxy methods on the handle classes
     def create_build_from_file(self, *args, **kwargs):
@@ -279,6 +282,10 @@ class CollectionResource(Iterable, UnicodeMixin):
         """
         return iter(self._individuals)
 
+    @classmethod
+    def from_response(cls, handle, response, options):
+        raise NotImplementedError
+
     # todo: add classmethod from response
 
 
@@ -295,6 +302,27 @@ class ProjectsList(CollectionResource):
     def projects(self):
         return self._individuals
 
+    @classmethod
+    def from_response(cls, handle, response, options):
+        data_dict = response.json
+        result = ProjectsList(
+            handle,
+            response=response,
+            links=Link.from_dict(data_dict["_links"], {
+                "self": EntityTypes.PROJECT,
+            }),
+            individuals=[
+                Project.from_response(
+                    handle=handle,
+                    response=None,
+                    data_dict=dict_part,
+                )
+                for dict_part in data_dict["projects"]
+            ],
+            options=None
+        )
+        return result
+
 
 class BuildList(CollectionResource):
     """
@@ -307,6 +335,26 @@ class BuildList(CollectionResource):
     @property
     def builds(self):
         return self._individuals
+
+    @classmethod
+    def from_response(cls, handle, response, options):
+        data_dict = response.json
+        result = BuildList(
+            handle,
+            response=response,
+            links=Link.from_dict(data_dict["_links"], {
+                "self": EntityTypes.BUILD,
+            }),
+            individuals=[
+                Build.from_response(
+                    handle=handle,
+                    response=None,
+                    data_dict=dict_part,
+                )
+                for dict_part in data_dict["builds"]
+            ]
+        )
+        return result
 
 
 class ProjectChrootList(CollectionResource):
@@ -325,6 +373,27 @@ class ProjectChrootList(CollectionResource):
 
     def enable(self, name):
         return self._handle.enable(self._project, name)
+
+    @classmethod
+    def from_response(cls, handle, response, project):
+        data_dict = response.json
+        return ProjectChrootList(
+            handle,
+            project=project,
+            response=response,
+            links=Link.from_dict(data_dict["_links"], {
+                "self": EntityTypes.PROJECT_CHROOT,
+            }),
+            individuals=[
+                ProjectChroot.from_response(
+                    handle=handle,
+                    response=None,
+                    data_dict=dict_part,
+                    project=project
+                )
+                for dict_part in data_dict["chroots"]
+            ]
+        )
 
 
 class MockChrootList(CollectionResource):

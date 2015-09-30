@@ -70,6 +70,8 @@ def main():
         for pc in project.get_project_chroot_list():
             print(pc)
 
+    t4()
+
     def t5():
         build = client.builds.get_one(117578)
         #build._handle.cancel(build._entity)
@@ -82,7 +84,7 @@ def main():
 
     def t6():
 
-        project = client.projects.get_one("4642")
+        project = client.projects.get_one(3554)
         print(project)
 
         # new_c = project.get_project_chroot("epel-5-x86_64")
@@ -92,12 +94,13 @@ def main():
 
         for pc in project.get_project_chroot_list():
             print(pc)
-            pc.disable()
+            # pc.disable()
 
 
 
         x = 2
 
+    t6()
 
     #
     def t7():
@@ -132,7 +135,10 @@ def main():
         for mc in mcl:
             print(mc)
 
-    t9()
+    # t9()
+
+    def t10():
+        pass
 
 if __name__ == "__main__":
     try:

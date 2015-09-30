@@ -20,7 +20,7 @@ from six.moves import configparser
 # from requests_toolbelt.multipart.encoder import MultipartEncoder
 
 from .resources import Root
-from .handlers import ProjectHandle, ProjectChrootHandle, BuildHandle
+from .handlers import ProjectHandle, ProjectChrootHandle, BuildHandle, MockChrootHandle
 from .common import EntityTypes
 from .net_client import NetClient
 
@@ -68,6 +68,14 @@ class HandlersProvider(with_metaclass(ABCMeta)):
     # def build_tasks(self):
     #     pass
 
+    @abstractproperty
+    def mock_chroots(self):
+        """
+        :rtype: MockChrootHandle
+        """
+        pass
+
+
 
 class CoprClient(UnicodeMixin, HandlersProvider):
     """ Main interface to the copr service
@@ -100,6 +108,7 @@ class CoprClient(UnicodeMixin, HandlersProvider):
         self._projects = None
         self._project_chroots = None
         self._builds = None
+        self._mock_chroots = None
 
     def _check_client_init(self):
         if not self._post_init_done:
@@ -120,6 +129,11 @@ class CoprClient(UnicodeMixin, HandlersProvider):
     def builds(self):
         self._check_client_init()
         return self._builds
+
+    @property
+    def mock_chroots(self):
+        self._check_client_init()
+        return self._mock_chroots
 
     def __unicode__(self):
         return (
@@ -203,9 +217,15 @@ class CoprClient(UnicodeMixin, HandlersProvider):
             projects_href=self.root.get_href_by_name(u"projects"),)
         self._project_chroots = ProjectChrootHandle(
             weakref.proxy(self), self.nc, root_url=self.root_url)
+
         self._builds = BuildHandle(
             weakref.proxy(self), self.nc, root_url=self.root_url,
             builds_href=self.root.get_href_by_name(u"builds"),)
+        # self._build_chroots = BuildTaskHandle()
 
+        self._mock_chroots = MockChrootHandle(
+            weakref.proxy(self), self.nc, root_url=self.root_url,
+            href=self.root.get_href_by_name(u"mock_chroots")
+        )
 
         self._post_init_done = True

@@ -1,14 +1,12 @@
 # coding: utf-8
 
-from collections import Iterable
-from marshmallow import Schema, fields, post_load
-from marshmallow import Schema, fields, validates_schema, ValidationError, validate
+from marshmallow import Schema, fields
 
 # todo: maybe define schemas for Link sets in each indvidual/collection
 # class LinkSchema(Schema):
 #     href = fields.Str()
 #
-from copr.util import UnicodeMixin
+from .common import BuiltPackage
 
 
 class EmptySchema(Schema):
@@ -41,16 +39,6 @@ class ProjectChrootSchema(Schema):
     comps = fields.Str(allow_none=True)
     comps_name = fields.Str(allow_none=True)
     comps_len = fields.Int(load_only=True, allow_none=True)
-
-
-class BuiltPackage(UnicodeMixin):
-
-    def __init__(self, name, version):
-        self.name = name
-        self.version = version
-
-    def __unicode__(self):
-        return u"{} {}".format(self.name, self.version)
 
 
 class BuiltPackageSchema(Schema):

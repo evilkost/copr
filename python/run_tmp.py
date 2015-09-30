@@ -124,8 +124,15 @@ def main():
         b = b.get_self()
         print(b)
 
-    t8()
+    # t8()
 
+    def t9():
+
+        mcl = client.mock_chroots.get_list(active_only=False)
+        for mc in mcl:
+            print(mc)
+
+    t9()
 
 if __name__ == "__main__":
     try:

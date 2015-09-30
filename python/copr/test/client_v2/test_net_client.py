@@ -66,4 +66,5 @@ class TestNetClient(object):
         # some coverage for Request error
         s = str(exc_info.value)
         with pytest.raises(ValueError):
+            # import ipdb; ipdb.set_trace()
             x = exc_info.value.response_json

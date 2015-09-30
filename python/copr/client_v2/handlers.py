@@ -6,7 +6,8 @@ import os
 from .common import EntityTypes
 from copr.client_v2.net_client import RequestError, MultiPartTuple
 from .entities import Link, ProjectChrootEntity
-from .resources import Project, OperationResult, ProjectsList, ProjectChroot, ProjectChrootList, Build, BuildList
+from .resources import Project, OperationResult, ProjectsList, ProjectChroot, ProjectChrootList, Build, BuildList, \
+    MockChroot, MockChrootList
 
 
 class AbstractHandle(object):
@@ -373,7 +374,7 @@ class ProjectChrootHandle(AbstractHandle):
         :type project: copr.client_v2.resources.Project
         """
 
-        new_entity = ProjectChrootEntity.constructor(
+        new_entity = ProjectChrootEntity(
             name=name,
             buildroot_pkgs=buildroot_pkgs or list()
         )
@@ -398,3 +399,43 @@ class ProjectChrootHandle(AbstractHandle):
             do_auth=True
         )
         return OperationResult(self, response)
+
+
+class MockChrootHandle(AbstractHandle):
+
+    def __init__(self, client, nc, root_url, href):
+        super(MockChrootHandle, self).__init__(client, nc, root_url)
+        self._href = href
+        self._base_url = "{}{}".format(self.root_url, href)
+
+    def get_base_url(self):
+        return self._base_url
+
+    def get_one(self, name):
+        url = "{}/{}".format(self.get_base_url(), name)
+        response = self.nc.get(url)
+        return MockChroot.from_response(self, response, response.json)
+
+    def get_list(self, active_only=True):
+        options = dict(active_only=active_only)
+
+        response = self.nc.get(
+            self.get_base_url(),
+            query_params=options
+        )
+        data_dict = response.json
+        return MockChrootList(
+            self,
+            response=response,
+            links=Link.from_dict(data_dict["_links"], {
+                "self": EntityTypes.MOCK_CHROOT,
+            }),
+            individuals=[
+                MockChroot.from_response(
+                    handle=self,
+                    response=None,
+                    data_dict=dict_part,
+                )
+                for dict_part in data_dict["chroots"]
+            ]
+        )

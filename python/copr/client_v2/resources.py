@@ -4,7 +4,7 @@ from collections import Iterable
 from ..util import UnicodeMixin
 
 from .common import EntityTypes
-from .entities import Link, ProjectEntity, ProjectChrootEntity, BuildEntity
+from .entities import Link, ProjectEntity, ProjectChrootEntity, BuildEntity, MockChrootEntity
 from .schemas import EmptySchema
 
 
@@ -143,7 +143,7 @@ class Project(IndividualResource):
         See additional options `:py:method:BuildHandle.create_from_file:`
         """
         builds = self._handle.get_builds_handle()
-        builds.create_from_file(self.id, *args, **kwargs)
+        return builds.create_from_file(self.id, *args, **kwargs)
 
     @classmethod
     def from_response(cls, handle, response, data_dict, options=None):
@@ -184,6 +184,29 @@ class ProjectChroot(IndividualResource):
 
     def update(self):
         return self._handle.update(self._project, self._entity)
+
+
+class MockChroot(IndividualResource):
+    """
+    :type entity: copr.client_v2.entities.MockChrootEntity
+    :type handle: copr.client_v2.handlers.MockChrootHandle
+    """
+
+    def __init__(self, entity, handle, **kwargs):
+        super(MockChroot, self).__init__(
+            entity=entity,
+            handle=handle,
+            **kwargs
+        )
+
+    @classmethod
+    def from_response(cls, handle, response, data_dict, options=None):
+        links = Link.from_dict(data_dict["_links"], {
+            "self": EntityTypes.MOCK_CHROOT,
+        })
+        entity = MockChrootEntity.from_dict(data_dict["chroot"])
+        return cls(entity=entity, handle=handle,
+                   response=response, links=links, options=options)
 
 
 class OperationResult(IndividualResource):
@@ -256,6 +279,8 @@ class CollectionResource(Iterable, UnicodeMixin):
         """
         return iter(self._individuals)
 
+    # todo: add classmethod from response
+
 
 class ProjectsList(CollectionResource):
     """
@@ -286,7 +311,7 @@ class BuildList(CollectionResource):
 
 class ProjectChrootList(CollectionResource):
     """
-    :type handle: coprclient_v2.handlers.ProjectChrootHandle
+    :type handle: copr.client_v2.handlers.ProjectChrootHandle
     """
 
     def __init__(self, handle, project, **kwargs):
@@ -300,3 +325,17 @@ class ProjectChrootList(CollectionResource):
 
     def enable(self, name):
         return self._handle.enable(self._project, name)
+
+
+class MockChrootList(CollectionResource):
+    """
+    :type handle: copr.client_v2.handlers.MockChrootHandle
+    """
+
+    def __init__(self, handle, **kwargs):
+        super(MockChrootList, self).__init__(**kwargs)
+        self._handle = handle
+
+    @property
+    def chroots(self):
+        return self._individuals
